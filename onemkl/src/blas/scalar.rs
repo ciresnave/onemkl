@@ -10,6 +10,8 @@
 //!
 //! [ref]: https://www.intel.com/content/www/us/en/docs/onemkl/developer-reference-c/
 
+use core::ffi::c_char;
+
 use num_complex::{Complex32, Complex64};
 use onemkl_sys::{self as sys, MKL_INT};
 
@@ -392,6 +394,95 @@ pub trait BlasScalar: Scalar {
         beta: Self,
         c: *mut Self,
         ldc: MKL_INT,
+    );
+
+    // ----- BLAS-like extensions (universal subset) -----
+
+    /// `cblas_*axpby` — `y ← alpha * x + beta * y`. Generalization of
+    /// `axpy` that also scales `y`.
+    ///
+    /// # Safety
+    /// As [`cblas_axpy`](Self::cblas_axpy) plus the requirement that `y`
+    /// is uniquely accessible.
+    unsafe fn cblas_axpby(
+        n: MKL_INT,
+        alpha: Self,
+        x: *const Self,
+        incx: MKL_INT,
+        beta: Self,
+        y: *mut Self,
+        incy: MKL_INT,
+    );
+
+    /// `MKL_*imatcopy` — in-place matrix transposition with scaling
+    /// `A ← alpha * op(A)` where the same buffer is read and written.
+    ///
+    /// `ordering` is `b'R'` or `b'C'`; `trans` is `b'N'`, `b'T'`, or
+    /// `b'C'` (use [`Layout::as_char`](crate::Layout::as_char) and
+    /// [`Transpose::as_char`](crate::Transpose::as_char)).
+    ///
+    /// # Safety
+    /// The buffer must be large enough for both pre- and post-transpose
+    /// shapes given the leading dimensions.
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn mkl_imatcopy(
+        ordering: c_char,
+        trans: c_char,
+        rows: usize,
+        cols: usize,
+        alpha: Self,
+        ab: *mut Self,
+        lda: usize,
+        ldb: usize,
+    );
+
+    /// `MKL_*omatcopy` — out-of-place matrix transposition with scaling
+    /// `B ← alpha * op(A)`.
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn mkl_omatcopy(
+        ordering: c_char,
+        trans: c_char,
+        rows: usize,
+        cols: usize,
+        alpha: Self,
+        a: *const Self,
+        lda: usize,
+        b: *mut Self,
+        ldb: usize,
+    );
+
+    /// `MKL_*omatcopy2` — out-of-place 2-D strided transposition.
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn mkl_omatcopy2(
+        ordering: c_char,
+        trans: c_char,
+        rows: usize,
+        cols: usize,
+        alpha: Self,
+        a: *const Self,
+        lda: usize,
+        stridea: usize,
+        b: *mut Self,
+        ldb: usize,
+        strideb: usize,
+    );
+
+    /// `MKL_*omatadd` — `C ← alpha * op(A) + beta * op(B)`.
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn mkl_omatadd(
+        ordering: c_char,
+        transa: c_char,
+        transb: c_char,
+        rows: usize,
+        cols: usize,
+        alpha: Self,
+        a: *const Self,
+        lda: usize,
+        beta: Self,
+        b: *const Self,
+        ldb: usize,
+        c: *mut Self,
+        ldc: usize,
     );
 }
 
@@ -838,6 +929,12 @@ macro_rules! impl_real_blas {
         trmm = $trmm:ident,
         trsm = $trsm:ident,
         gemmt = $gemmt:ident,
+        // Extensions
+        axpby = $axpby:ident,
+        imatcopy = $imatcopy:ident,
+        omatcopy = $omatcopy:ident,
+        omatcopy2 = $omatcopy2:ident,
+        omatadd = $omatadd:ident,
     ) => {
         impl BlasScalar for $ty {
             #[inline]
@@ -1063,6 +1160,61 @@ macro_rules! impl_real_blas {
                     )
                 }
             }
+            #[inline]
+            unsafe fn cblas_axpby(
+                n: MKL_INT, alpha: Self, x: *const Self, incx: MKL_INT,
+                beta: Self, y: *mut Self, incy: MKL_INT,
+            ) {
+                unsafe { sys::$axpby(n, alpha, x, incx, beta, y, incy) }
+            }
+            #[inline]
+            unsafe fn mkl_imatcopy(
+                ordering: c_char, trans: c_char,
+                rows: usize, cols: usize, alpha: Self,
+                ab: *mut Self, lda: usize, ldb: usize,
+            ) {
+                unsafe { sys::$imatcopy(ordering, trans, rows, cols, alpha, ab, lda, ldb) }
+            }
+            #[inline]
+            unsafe fn mkl_omatcopy(
+                ordering: c_char, trans: c_char,
+                rows: usize, cols: usize, alpha: Self,
+                a: *const Self, lda: usize,
+                b: *mut Self, ldb: usize,
+            ) {
+                unsafe {
+                    sys::$omatcopy(ordering, trans, rows, cols, alpha, a, lda, b, ldb)
+                }
+            }
+            #[inline]
+            unsafe fn mkl_omatcopy2(
+                ordering: c_char, trans: c_char,
+                rows: usize, cols: usize, alpha: Self,
+                a: *const Self, lda: usize, stridea: usize,
+                b: *mut Self, ldb: usize, strideb: usize,
+            ) {
+                unsafe {
+                    sys::$omatcopy2(
+                        ordering, trans, rows, cols, alpha,
+                        a, lda, stridea, b, ldb, strideb,
+                    )
+                }
+            }
+            #[inline]
+            unsafe fn mkl_omatadd(
+                ordering: c_char, transa: c_char, transb: c_char,
+                rows: usize, cols: usize, alpha: Self,
+                a: *const Self, lda: usize,
+                beta: Self, b: *const Self, ldb: usize,
+                c: *mut Self, ldc: usize,
+            ) {
+                unsafe {
+                    sys::$omatadd(
+                        ordering, transa, transb, rows, cols, alpha,
+                        a, lda, beta, b, ldb, c, ldc,
+                    )
+                }
+            }
         }
 
         impl RealBlasScalar for $ty {
@@ -1197,6 +1349,9 @@ impl_real_blas!(
     gemm = cblas_sgemm,
     symm = cblas_ssymm, syrk = cblas_ssyrk, syr2k = cblas_ssyr2k,
     trmm = cblas_strmm, trsm = cblas_strsm, gemmt = cblas_sgemmt,
+    axpby = cblas_saxpby,
+    imatcopy = MKL_Simatcopy, omatcopy = MKL_Somatcopy,
+    omatcopy2 = MKL_Somatcopy2, omatadd = MKL_Somatadd,
 );
 
 impl_real_blas!(
@@ -1217,6 +1372,9 @@ impl_real_blas!(
     gemm = cblas_dgemm,
     symm = cblas_dsymm, syrk = cblas_dsyrk, syr2k = cblas_dsyr2k,
     trmm = cblas_dtrmm, trsm = cblas_dtrsm, gemmt = cblas_dgemmt,
+    axpby = cblas_daxpby,
+    imatcopy = MKL_Dimatcopy, omatcopy = MKL_Domatcopy,
+    omatcopy2 = MKL_Domatcopy2, omatadd = MKL_Domatadd,
 );
 
 macro_rules! impl_complex_blas {
@@ -1245,6 +1403,12 @@ macro_rules! impl_complex_blas {
         // L3 complex-only
         hemm = $hemm:ident, herk = $herk:ident, her2k = $her2k:ident,
         gemm3m = $gemm3m:ident,
+        // Extensions
+        axpby = $axpby:ident,
+        imatcopy = $imatcopy:ident,
+        omatcopy = $omatcopy:ident,
+        omatcopy2 = $omatcopy2:ident,
+        omatadd = $omatadd:ident,
     ) => {
         impl BlasScalar for $ty {
             #[inline]
@@ -1522,6 +1686,84 @@ macro_rules! impl_complex_blas {
                     )
                 }
             }
+            #[inline]
+            unsafe fn cblas_axpby(
+                n: MKL_INT, alpha: Self, x: *const Self, incx: MKL_INT,
+                beta: Self, y: *mut Self, incy: MKL_INT,
+            ) {
+                unsafe {
+                    sys::$axpby(
+                        n,
+                        (&alpha as *const Self).cast(),
+                        x.cast(), incx,
+                        (&beta as *const Self).cast(),
+                        y.cast(), incy,
+                    )
+                }
+            }
+            #[inline]
+            unsafe fn mkl_imatcopy(
+                ordering: c_char, trans: c_char,
+                rows: usize, cols: usize, alpha: Self,
+                ab: *mut Self, lda: usize, ldb: usize,
+            ) {
+                unsafe {
+                    sys::$imatcopy(
+                        ordering, trans, rows, cols,
+                        core::mem::transmute_copy(&alpha),
+                        ab.cast(), lda, ldb,
+                    )
+                }
+            }
+            #[inline]
+            unsafe fn mkl_omatcopy(
+                ordering: c_char, trans: c_char,
+                rows: usize, cols: usize, alpha: Self,
+                a: *const Self, lda: usize,
+                b: *mut Self, ldb: usize,
+            ) {
+                unsafe {
+                    sys::$omatcopy(
+                        ordering, trans, rows, cols,
+                        core::mem::transmute_copy(&alpha),
+                        a.cast(), lda, b.cast(), ldb,
+                    )
+                }
+            }
+            #[inline]
+            unsafe fn mkl_omatcopy2(
+                ordering: c_char, trans: c_char,
+                rows: usize, cols: usize, alpha: Self,
+                a: *const Self, lda: usize, stridea: usize,
+                b: *mut Self, ldb: usize, strideb: usize,
+            ) {
+                unsafe {
+                    sys::$omatcopy2(
+                        ordering, trans, rows, cols,
+                        core::mem::transmute_copy(&alpha),
+                        a.cast(), lda, stridea, b.cast(), ldb, strideb,
+                    )
+                }
+            }
+            #[inline]
+            unsafe fn mkl_omatadd(
+                ordering: c_char, transa: c_char, transb: c_char,
+                rows: usize, cols: usize, alpha: Self,
+                a: *const Self, lda: usize,
+                beta: Self, b: *const Self, ldb: usize,
+                c: *mut Self, ldc: usize,
+            ) {
+                unsafe {
+                    sys::$omatadd(
+                        ordering, transa, transb, rows, cols,
+                        core::mem::transmute_copy(&alpha),
+                        a.cast(), lda,
+                        core::mem::transmute_copy(&beta),
+                        b.cast(), ldb,
+                        c.cast(), ldc,
+                    )
+                }
+            }
         }
 
         impl ComplexBlasScalar for $ty {
@@ -1781,6 +2023,9 @@ impl_complex_blas!(
     trmm = cblas_ctrmm, trsm = cblas_ctrsm, gemmt = cblas_cgemmt,
     hemm = cblas_chemm, herk = cblas_cherk, her2k = cblas_cher2k,
     gemm3m = cblas_cgemm3m,
+    axpby = cblas_caxpby,
+    imatcopy = MKL_Cimatcopy, omatcopy = MKL_Comatcopy,
+    omatcopy2 = MKL_Comatcopy2, omatadd = MKL_Comatadd,
 );
 
 impl_complex_blas!(
@@ -1803,4 +2048,7 @@ impl_complex_blas!(
     trmm = cblas_ztrmm, trsm = cblas_ztrsm, gemmt = cblas_zgemmt,
     hemm = cblas_zhemm, herk = cblas_zherk, her2k = cblas_zher2k,
     gemm3m = cblas_zgemm3m,
+    axpby = cblas_zaxpby,
+    imatcopy = MKL_Zimatcopy, omatcopy = MKL_Zomatcopy,
+    omatcopy2 = MKL_Zomatcopy2, omatadd = MKL_Zomatadd,
 );

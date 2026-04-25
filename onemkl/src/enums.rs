@@ -26,6 +26,18 @@ impl Layout {
             Self::ColMajor => sys::CBLAS_LAYOUT::CblasColMajor,
         }
     }
+
+    /// One-character representation: `R` for row-major, `C` for
+    /// column-major. Used by the `MKL_*matcopy` / `MKL_*matadd`
+    /// extension routines.
+    #[inline]
+    #[must_use]
+    pub const fn as_char(self) -> u8 {
+        match self {
+            Self::RowMajor => b'R',
+            Self::ColMajor => b'C',
+        }
+    }
 }
 
 impl Default for Layout {
@@ -60,6 +72,18 @@ impl Transpose {
             Self::NoTrans => sys::CBLAS_TRANSPOSE::CblasNoTrans,
             Self::Trans => sys::CBLAS_TRANSPOSE::CblasTrans,
             Self::ConjTrans => sys::CBLAS_TRANSPOSE::CblasConjTrans,
+        }
+    }
+
+    /// One-character representation: `N`, `T`, or `C`. Used by the
+    /// `MKL_*matcopy` / `MKL_*matadd` extension routines.
+    #[inline]
+    #[must_use]
+    pub const fn as_char(self) -> u8 {
+        match self {
+            Self::NoTrans => b'N',
+            Self::Trans => b'T',
+            Self::ConjTrans => b'C',
         }
     }
 }
