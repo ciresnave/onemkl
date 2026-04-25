@@ -1,0 +1,32 @@
+[package]
+name = "onemkl"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+description = "Safe, idiomatic Rust wrapper over Intel oneAPI Math Kernel Library (oneMKL)."
+readme = "README.md"
+
+[features]
+default = ["lp64", "threading-sequential", "link-dynamic"]
+lp64 = ["onemkl-sys/lp64"]
+ilp64 = ["onemkl-sys/ilp64"]
+threading-sequential = ["onemkl-sys/threading-sequential"]
+threading-intel-openmp = ["onemkl-sys/threading-intel-openmp"]
+threading-tbb = ["onemkl-sys/threading-tbb"]
+link-dynamic = ["onemkl-sys/link-dynamic"]
+link-static = ["onemkl-sys/link-static"]
+
+[dependencies]
+onemkl-sys = { workspace = true }
+num-complex = { workspace = true }
+num-traits = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+approx = "0.5"

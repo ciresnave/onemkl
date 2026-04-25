@@ -1,0 +1,56 @@
+[package]
+name = "onemkl-sys"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+description = "Raw FFI bindings to the C interface of Intel oneAPI Math Kernel Library (oneMKL)."
+readme = "README.md"
+links = "mkl"
+build = "build.rs"
+
+[lib]
+name = "onemkl_sys"
+
+[features]
+default = ["lp64", "threading-sequential", "link-dynamic"]
+
+# --- Interface layer: pick exactly one ---
+# 32-bit MKL_INT (default; matches int).
+lp64 = []
+# 64-bit MKL_INT (long long). Required for arrays > 2^31 elements per dim.
+ilp64 = []
+
+# --- Threading layer: pick exactly one ---
+# Sequential (no internal threading).
+threading-sequential = []
+# Intel OpenMP runtime (libiomp5).
+threading-intel-openmp = []
+# Intel oneAPI Threading Building Blocks.
+threading-tbb = []
+
+# --- Linkage: pick exactly one ---
+# Dynamic linking via *_dll.lib import libraries (recommended).
+link-dynamic = []
+# Static linking against the *.lib archives.
+link-static = []
+
+# --- MPI-dependent domains (opt-in; require MPI on PATH) ---
+# Cluster Sparse Solver (Cluster PARDISO). Requires Intel MPI or MS-MPI.
+cluster-sparse-solver = []
+# Cluster Discrete Fourier Transform.
+cdft = []
+# ScaLAPACK distributed dense solvers.
+scalapack = []
+# BLACS communication (transitively required by ScaLAPACK / PBLAS).
+blacs = []
+# Parallel BLAS (PBLAS). Implies blacs.
+pblas = ["blacs"]
+
+[build-dependencies]
+bindgen = "0.72"
