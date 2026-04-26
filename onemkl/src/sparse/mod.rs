@@ -26,6 +26,7 @@
 mod scalar;
 
 pub use scalar::SparseScalar;
+// `RealSparseScalar` is defined further down in this file.
 
 use core::marker::PhantomData;
 use core::ptr;
@@ -454,6 +455,124 @@ impl<T: SparseScalar> CsrMatrix<T> {
                 descr_inner,
                 x.as_ptr(),
                 y.as_mut_ptr(),
+            )
+        };
+        check_sparse(status)
+    }
+}
+
+// =====================================================================
+// Sparse QR — real-only (oneMKL doesn't ship complex variants)
+// =====================================================================
+
+/// Real-only sparse routines, currently the QR family.
+#[allow(missing_docs)]
+pub trait RealSparseScalar: SparseScalar {
+    unsafe fn sparse_qr_factorize(
+        a: sparse_matrix_t,
+        alt_values: *mut Self,
+    ) -> sparse_status_t::Type;
+
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn sparse_qr_solve(
+        op: sparse_operation_t::Type,
+        a: sparse_matrix_t,
+        alt_values: *mut Self,
+        layout: sparse_layout_t::Type,
+        columns: core::ffi::c_int,
+        x: *mut Self,
+        ldx: core::ffi::c_int,
+        b: *const Self,
+        ldb: core::ffi::c_int,
+    ) -> sparse_status_t::Type;
+}
+
+impl RealSparseScalar for f32 {
+    unsafe fn sparse_qr_factorize(
+        a: sparse_matrix_t,
+        alt_values: *mut f32,
+    ) -> sparse_status_t::Type {
+        unsafe { sys::mkl_sparse_s_qr_factorize(a, alt_values) }
+    }
+    unsafe fn sparse_qr_solve(
+        op: sparse_operation_t::Type,
+        a: sparse_matrix_t,
+        alt_values: *mut f32,
+        layout: sparse_layout_t::Type,
+        columns: core::ffi::c_int,
+        x: *mut f32,
+        ldx: core::ffi::c_int,
+        b: *const f32,
+        ldb: core::ffi::c_int,
+    ) -> sparse_status_t::Type {
+        unsafe {
+            sys::mkl_sparse_s_qr_solve(op, a, alt_values, layout, columns, x, ldx, b, ldb)
+        }
+    }
+}
+impl RealSparseScalar for f64 {
+    unsafe fn sparse_qr_factorize(
+        a: sparse_matrix_t,
+        alt_values: *mut f64,
+    ) -> sparse_status_t::Type {
+        unsafe { sys::mkl_sparse_d_qr_factorize(a, alt_values) }
+    }
+    unsafe fn sparse_qr_solve(
+        op: sparse_operation_t::Type,
+        a: sparse_matrix_t,
+        alt_values: *mut f64,
+        layout: sparse_layout_t::Type,
+        columns: core::ffi::c_int,
+        x: *mut f64,
+        ldx: core::ffi::c_int,
+        b: *const f64,
+        ldb: core::ffi::c_int,
+    ) -> sparse_status_t::Type {
+        unsafe {
+            sys::mkl_sparse_d_qr_solve(op, a, alt_values, layout, columns, x, ldx, b, ldb)
+        }
+    }
+}
+
+impl<T: RealSparseScalar> CsrMatrix<T> {
+    /// Symbolic + numerical QR factorization of the matrix. Equivalent
+    /// to calling `mkl_sparse_qr_reorder` followed by
+    /// `mkl_sparse_?_qr_factorize`. After calling this, [`qr_solve`]
+    /// can solve `A * x = b` and `Aᵀ * x = b` repeatedly.
+    pub fn qr_factor(&self, descr: impl Into<MatrixDescr>) -> Result<()> {
+        let descr_inner = descr.into().inner;
+        let status = unsafe { sys::mkl_sparse_qr_reorder(self.handle, descr_inner) };
+        check_sparse(status)?;
+        let status = unsafe {
+            T::sparse_qr_factorize(self.handle, core::ptr::null_mut())
+        };
+        check_sparse(status)
+    }
+
+    /// Solve `op(A) * X = B` using the cached QR factorization.
+    /// Call [`qr_factor`] first.
+    #[allow(clippy::too_many_arguments)]
+    pub fn qr_solve(
+        &self,
+        op: Operation,
+        layout: DenseLayout,
+        b: &[T],
+        columns: usize,
+        ldx: usize,
+        x: &mut [T],
+        ldb: usize,
+    ) -> Result<()> {
+        let status = unsafe {
+            T::sparse_qr_solve(
+                op.as_sys(),
+                self.handle,
+                core::ptr::null_mut(),
+                layout.as_sys(),
+                columns.try_into().map_err(|_| Error::DimensionOverflow)?,
+                x.as_mut_ptr(),
+                ldx.try_into().map_err(|_| Error::DimensionOverflow)?,
+                b.as_ptr(),
+                ldb.try_into().map_err(|_| Error::DimensionOverflow)?,
             )
         };
         check_sparse(status)
