@@ -29,8 +29,8 @@ function(s).
 | --- | --- | --- |
 | BLAS L1/L2/L3 | Common | All universal + real-only + complex-only routines, including banded and packed |
 | BLAS-like extensions | MVP | `axpby`, `imatcopy`/`omatcopy`/`omatcopy2`/`omatadd`, batched (strided) `gemm`/`trsm`/`gemv`/`dgmm`/`axpy`/`copy`/`gemm3m` |
-| LAPACK | MVP | Linear solve, QR, LS, eigenvalue, SVD; banded/packed/generalized still TODO |
-| Sparse BLAS (IE) | MVP | CSR `mv`/`mm`/`trsv`/`optimize` + Sparse QR factor / solve |
+| LAPACK | Common | Linear solve, QR, LS, eigenvalue (incl. RRR + D&C), SVD, banded, packed, generalized |
+| Sparse BLAS (IE) | MVP+ | CSR / COO / CSC / BSR construction; `mv`/`mm`/`trsv`/`optimize` + Sparse QR factor / solve |
 | PARDISO | MVP | Factor + solve, multi-RHS, cached factorization |
 | DSS | MVP | Symmetric SPD solve, multi-RHS |
 | ISS (CG, FGMRES) | MVP | Closure-driven mat-vec; preconditioned CG |
@@ -38,7 +38,7 @@ function(s).
 | FEAST | MVP | Dense symmetric / Hermitian; CSR / banded / generalized / RCI still TODO |
 | VM (Vector Math) | Common | All major function families |
 | RNG (VSL) | MVP | RAII `Stream` + 8 continuous + 4 discrete distributions |
-| FFT (DFTI) | MVP | 1-D complex (in-place + out-of-place) |
+| FFT (DFTI) | MVP+ | 1-D / 2-D / 3-D / N-D complex; real-input (CCE) variants |
 | Data fitting | MVP | Natural cubic spline |
 | Optimization | MVP | TRNLS, TRNLSPBC, numerical Jacobian |
 | Service | Common | Version, threading, memory, verbose, finalize |
@@ -60,7 +60,8 @@ Move every domain currently at MVP up to Common. Specifically:
   `?ppsv`/`?pptrf`), generalized eigenvalue (`?ggev`, `?sygv`,
   `?hegv`), expert / RRR drivers (`?gesvx`, `?syevr`, `?heevr`),
   utility routines (`?lange`, `?gecon`, `?syrfs`).
-- **Sparse BLAS**: COO, CSC, BSR formats; `mkl_sparse_copy`,
+- **Sparse BLAS**: ~~COO, CSC, BSR formats~~ (done — `from_coo` /
+  `from_csc` / `from_bsr` constructors); `mkl_sparse_copy`,
   `mkl_sparse_convert_*`, `mkl_sparse_order`; the analysis-stage hint
   setters (`mkl_sparse_set_mv_hint`, etc.).
 - **PARDISO**: `pardiso_64`, `mkl_pardiso_pivot`, `pardiso_getdiag`,

@@ -1,13 +1,15 @@
 //! Inspector-Executor Sparse BLAS — sparse linear algebra with reusable
 //! handles.
 //!
-//! Currently provides [`CsrMatrix`], an owned wrapper over a CSR-format
-//! sparse matrix handle (`sparse_matrix_t`). It supports matrix-vector
-//! and matrix-matrix multiplication, triangular solves, and the
-//! `mkl_sparse_optimize` hint for repeated execution.
+//! Provides [`SparseMatrix`] (also exported as `CsrMatrix` for backward
+//! compatibility), an owned wrapper over a sparse matrix handle
+//! (`sparse_matrix_t`). The handle can be built from CSR, COO, CSC, or
+//! BSR storage via the corresponding `from_*` constructor and supports
+//! matrix-vector / matrix-matrix multiplication, triangular solves, and
+//! the `mkl_sparse_optimize` hint for repeated execution.
 //!
 //! ```no_run
-//! use onemkl::sparse::{CsrMatrix, IndexBase, Operation, MatrixType};
+//! use onemkl::sparse::{SparseMatrix, IndexBase, Operation, MatrixType};
 //!
 //! // 3x3 sparse matrix in CSR (zero-indexed):
 //! //   [[1, 0, 0],
@@ -16,7 +18,7 @@
 //! let row_ptr = vec![0, 1, 2, 3];
 //! let col_idx = vec![0, 1, 2];
 //! let values  = vec![1.0_f64, 2.0, 3.0];
-//! let mat = CsrMatrix::from_csr(3, 3, IndexBase::Zero, row_ptr, col_idx, values).unwrap();
+//! let mat = SparseMatrix::from_csr(3, 3, IndexBase::Zero, row_ptr, col_idx, values).unwrap();
 //!
 //! let x = [1.0_f64; 3];
 //! let mut y = [0.0_f64; 3];
@@ -177,6 +179,26 @@ impl DenseLayout {
     }
 }
 
+/// Storage layout of the dense blocks within a BSR matrix.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum BlockLayout {
+    /// Each block stored row-major.
+    #[default]
+    RowMajor,
+    /// Each block stored column-major.
+    ColMajor,
+}
+
+impl BlockLayout {
+    #[inline]
+    fn as_sys(self) -> sparse_layout_t::Type {
+        match self {
+            Self::RowMajor => sparse_layout_t::SPARSE_LAYOUT_ROW_MAJOR,
+            Self::ColMajor => sparse_layout_t::SPARSE_LAYOUT_COLUMN_MAJOR,
+        }
+    }
+}
+
 /// A descriptor used to specialize sparse routines for the structure
 /// of the matrix at execution time.
 #[derive(Debug, Clone, Copy)]
@@ -251,32 +273,37 @@ impl From<MatrixType> for MatrixDescr {
 }
 
 // =====================================================================
-// CsrMatrix
+// SparseMatrix
 // =====================================================================
 
-/// Owned sparse matrix in CSR format.
+/// Owned sparse matrix handle.
 ///
-/// Stores the underlying `row_ptr`, `col_idx`, and `values` arrays
-/// internally; MKL's handle borrows from these for the lifetime of the
-/// `CsrMatrix`. Drop releases both the MKL handle and the Rust-owned
-/// buffers.
-pub struct CsrMatrix<T: SparseScalar> {
+/// The handle can be built from any of the supported MKL formats — CSR,
+/// COO, CSC, or BSR — via the corresponding `from_*` constructor. MKL
+/// stores a generic handle internally and supports the same set of
+/// executor routines (`mv`, `mm`, `trsv`, …) regardless of the source
+/// format. The handle borrows from the index/value buffers passed in,
+/// which this struct owns for the lifetime of the matrix.
+pub struct SparseMatrix<T: SparseScalar> {
     handle: sparse_matrix_t,
     // The buffers below back the MKL handle. They are kept Boxed and
     // owned by this struct, with MKL holding `*mut` pointers into them.
     // Do not access them directly — even reads could race with MKL's
     // executor stage.
-    _row_ptr: Box<[i32]>,
-    _col_idx: Box<[i32]>,
+    _idx_a: Box<[i32]>,
+    _idx_b: Box<[i32]>,
     _values: Box<[T]>,
     rows: usize,
     cols: usize,
     _marker: PhantomData<T>,
 }
 
-unsafe impl<T: SparseScalar + Send> Send for CsrMatrix<T> {}
+/// Compatibility alias for [`SparseMatrix`].
+pub type CsrMatrix<T> = SparseMatrix<T>;
 
-impl<T: SparseScalar> CsrMatrix<T> {
+unsafe impl<T: SparseScalar + Send> Send for SparseMatrix<T> {}
+
+impl<T: SparseScalar> SparseMatrix<T> {
     /// Build a CSR matrix from standard 3-array CSR storage.
     ///
     /// `row_ptr` has length `rows + 1`. `col_idx` and `values` have
@@ -328,8 +355,194 @@ impl<T: SparseScalar> CsrMatrix<T> {
 
         Ok(Self {
             handle,
-            _row_ptr: row_ptr_box,
-            _col_idx: col_idx_box,
+            _idx_a: row_ptr_box,
+            _idx_b: col_idx_box,
+            _values: values_box,
+            rows,
+            cols,
+            _marker: PhantomData,
+        })
+    }
+
+    /// Build a sparse matrix from coordinate-format storage.
+    ///
+    /// `row_indx` and `col_indx` give the row/column of each non-zero;
+    /// they and `values` all have length `nnz`.
+    pub fn from_coo(
+        rows: usize,
+        cols: usize,
+        indexing: IndexBase,
+        row_indx: Vec<i32>,
+        col_indx: Vec<i32>,
+        values: Vec<T>,
+    ) -> Result<Self> {
+        if row_indx.len() != col_indx.len() || col_indx.len() != values.len() {
+            return Err(Error::InvalidArgument(
+                "row_indx, col_indx, and values must all have the same length",
+            ));
+        }
+        let m: i32 = rows.try_into().map_err(|_| Error::DimensionOverflow)?;
+        let n: i32 = cols.try_into().map_err(|_| Error::DimensionOverflow)?;
+        let nnz: i32 = values.len().try_into().map_err(|_| Error::DimensionOverflow)?;
+
+        let mut row_box = row_indx.into_boxed_slice();
+        let mut col_box = col_indx.into_boxed_slice();
+        let mut values_box = values.into_boxed_slice();
+
+        let mut handle: sparse_matrix_t = ptr::null_mut();
+        let status = unsafe {
+            T::sparse_create_coo(
+                &mut handle,
+                indexing.as_sys(),
+                m,
+                n,
+                nnz,
+                row_box.as_mut_ptr(),
+                col_box.as_mut_ptr(),
+                values_box.as_mut_ptr(),
+            )
+        };
+        check_sparse(status)?;
+
+        Ok(Self {
+            handle,
+            _idx_a: row_box,
+            _idx_b: col_box,
+            _values: values_box,
+            rows,
+            cols,
+            _marker: PhantomData,
+        })
+    }
+
+    /// Build a sparse matrix from compressed-column (CSC) storage.
+    ///
+    /// `col_ptr` has length `cols + 1`; `row_indx` and `values` have
+    /// length `nnz` (equal to `col_ptr[cols]` for zero-indexing).
+    pub fn from_csc(
+        rows: usize,
+        cols: usize,
+        indexing: IndexBase,
+        col_ptr: Vec<i32>,
+        row_indx: Vec<i32>,
+        values: Vec<T>,
+    ) -> Result<Self> {
+        if col_ptr.len() != cols + 1 {
+            return Err(Error::InvalidArgument("col_ptr must have length cols + 1"));
+        }
+        if row_indx.len() != values.len() {
+            return Err(Error::InvalidArgument(
+                "row_indx and values must have the same length",
+            ));
+        }
+        let m: i32 = rows.try_into().map_err(|_| Error::DimensionOverflow)?;
+        let n: i32 = cols.try_into().map_err(|_| Error::DimensionOverflow)?;
+
+        let mut col_ptr_box = col_ptr.into_boxed_slice();
+        let mut row_indx_box = row_indx.into_boxed_slice();
+        let mut values_box = values.into_boxed_slice();
+
+        let mut handle: sparse_matrix_t = ptr::null_mut();
+        let cols_start_ptr = col_ptr_box.as_mut_ptr();
+        let cols_end_ptr = unsafe { cols_start_ptr.add(1) };
+
+        let status = unsafe {
+            T::sparse_create_csc(
+                &mut handle,
+                indexing.as_sys(),
+                m,
+                n,
+                cols_start_ptr,
+                cols_end_ptr,
+                row_indx_box.as_mut_ptr(),
+                values_box.as_mut_ptr(),
+            )
+        };
+        check_sparse(status)?;
+
+        Ok(Self {
+            handle,
+            _idx_a: col_ptr_box,
+            _idx_b: row_indx_box,
+            _values: values_box,
+            rows,
+            cols,
+            _marker: PhantomData,
+        })
+    }
+
+    /// Build a sparse matrix from block sparse row (BSR) storage.
+    ///
+    /// `block_size` is the side length of each square dense block.
+    /// `row_ptr` has length `block_rows + 1`, where `block_rows = rows / block_size`.
+    /// `col_idx` has length `nnz_blocks`. `values` has length
+    /// `nnz_blocks * block_size * block_size`, with each block stored
+    /// according to `block_layout`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn from_bsr(
+        rows: usize,
+        cols: usize,
+        block_size: usize,
+        block_layout: BlockLayout,
+        indexing: IndexBase,
+        row_ptr: Vec<i32>,
+        col_idx: Vec<i32>,
+        values: Vec<T>,
+    ) -> Result<Self> {
+        if block_size == 0 {
+            return Err(Error::InvalidArgument("block_size must be > 0"));
+        }
+        if rows % block_size != 0 || cols % block_size != 0 {
+            return Err(Error::InvalidArgument(
+                "rows and cols must be multiples of block_size",
+            ));
+        }
+        let block_rows = rows / block_size;
+        let block_cols = cols / block_size;
+        if row_ptr.len() != block_rows + 1 {
+            return Err(Error::InvalidArgument(
+                "row_ptr must have length (rows / block_size) + 1",
+            ));
+        }
+        let nnz_blocks = col_idx.len();
+        if values.len() != nnz_blocks * block_size * block_size {
+            return Err(Error::InvalidArgument(
+                "values must have length col_idx.len() * block_size * block_size",
+            ));
+        }
+        // MKL takes rows/cols in block units, not element units.
+        let m: i32 = block_rows.try_into().map_err(|_| Error::DimensionOverflow)?;
+        let n: i32 = block_cols.try_into().map_err(|_| Error::DimensionOverflow)?;
+        let bs: i32 = block_size.try_into().map_err(|_| Error::DimensionOverflow)?;
+
+        let mut row_ptr_box = row_ptr.into_boxed_slice();
+        let mut col_idx_box = col_idx.into_boxed_slice();
+        let mut values_box = values.into_boxed_slice();
+
+        let mut handle: sparse_matrix_t = ptr::null_mut();
+        let rows_start_ptr = row_ptr_box.as_mut_ptr();
+        let rows_end_ptr = unsafe { rows_start_ptr.add(1) };
+
+        let status = unsafe {
+            T::sparse_create_bsr(
+                &mut handle,
+                indexing.as_sys(),
+                block_layout.as_sys(),
+                m,
+                n,
+                bs,
+                rows_start_ptr,
+                rows_end_ptr,
+                col_idx_box.as_mut_ptr(),
+                values_box.as_mut_ptr(),
+            )
+        };
+        check_sparse(status)?;
+
+        Ok(Self {
+            handle,
+            _idx_a: row_ptr_box,
+            _idx_b: col_idx_box,
             _values: values_box,
             rows,
             cols,
@@ -534,7 +747,7 @@ impl RealSparseScalar for f64 {
     }
 }
 
-impl<T: RealSparseScalar> CsrMatrix<T> {
+impl<T: RealSparseScalar> SparseMatrix<T> {
     /// Symbolic + numerical QR factorization of the matrix. Equivalent
     /// to calling `mkl_sparse_qr_reorder` followed by
     /// `mkl_sparse_?_qr_factorize`. After calling this, [`qr_solve`]
@@ -579,7 +792,7 @@ impl<T: RealSparseScalar> CsrMatrix<T> {
     }
 }
 
-impl<T: SparseScalar> Drop for CsrMatrix<T> {
+impl<T: SparseScalar> Drop for SparseMatrix<T> {
     fn drop(&mut self) {
         if !self.handle.is_null() {
             unsafe {

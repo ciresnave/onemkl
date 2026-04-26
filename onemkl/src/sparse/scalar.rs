@@ -29,6 +29,44 @@ pub trait SparseScalar: Scalar {
         values: *mut Self,
     ) -> sparse_status_t::Type;
 
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn sparse_create_coo(
+        a: *mut sparse_matrix_t,
+        indexing: sparse_index_base_t::Type,
+        rows: c_int,
+        cols: c_int,
+        nnz: c_int,
+        row_indx: *mut c_int,
+        col_indx: *mut c_int,
+        values: *mut Self,
+    ) -> sparse_status_t::Type;
+
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn sparse_create_csc(
+        a: *mut sparse_matrix_t,
+        indexing: sparse_index_base_t::Type,
+        rows: c_int,
+        cols: c_int,
+        cols_start: *mut c_int,
+        cols_end: *mut c_int,
+        row_indx: *mut c_int,
+        values: *mut Self,
+    ) -> sparse_status_t::Type;
+
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn sparse_create_bsr(
+        a: *mut sparse_matrix_t,
+        indexing: sparse_index_base_t::Type,
+        block_layout: onemkl_sys::sparse_layout_t::Type,
+        rows: c_int,
+        cols: c_int,
+        block_size: c_int,
+        rows_start: *mut c_int,
+        rows_end: *mut c_int,
+        col_indx: *mut c_int,
+        values: *mut Self,
+    ) -> sparse_status_t::Type;
+
     unsafe fn sparse_mv(
         op: sparse_operation_t::Type,
         alpha: Self,
@@ -66,7 +104,9 @@ pub trait SparseScalar: Scalar {
 
 macro_rules! impl_sparse_real {
     ($ty:ty,
-        create_csr=$create:ident, mv=$mv:ident, mm=$mm:ident, trsv=$trsv:ident,
+        create_csr=$create:ident, create_coo=$create_coo:ident,
+        create_csc=$create_csc:ident, create_bsr=$create_bsr:ident,
+        mv=$mv:ident, mm=$mm:ident, trsv=$trsv:ident,
     ) => {
         impl SparseScalar for $ty {
             unsafe fn sparse_create_csr(
@@ -81,6 +121,50 @@ macro_rules! impl_sparse_real {
                 unsafe {
                     sys::$create(
                         a, indexing, rows, cols, rows_start, rows_end, col_indx, values,
+                    )
+                }
+            }
+            unsafe fn sparse_create_coo(
+                a: *mut sparse_matrix_t,
+                indexing: sparse_index_base_t::Type,
+                rows: c_int, cols: c_int, nnz: c_int,
+                row_indx: *mut c_int, col_indx: *mut c_int,
+                values: *mut Self,
+            ) -> sparse_status_t::Type {
+                unsafe {
+                    sys::$create_coo(
+                        a, indexing, rows, cols, nnz, row_indx, col_indx, values,
+                    )
+                }
+            }
+            unsafe fn sparse_create_csc(
+                a: *mut sparse_matrix_t,
+                indexing: sparse_index_base_t::Type,
+                rows: c_int, cols: c_int,
+                cols_start: *mut c_int, cols_end: *mut c_int,
+                row_indx: *mut c_int,
+                values: *mut Self,
+            ) -> sparse_status_t::Type {
+                unsafe {
+                    sys::$create_csc(
+                        a, indexing, rows, cols, cols_start, cols_end, row_indx, values,
+                    )
+                }
+            }
+            unsafe fn sparse_create_bsr(
+                a: *mut sparse_matrix_t,
+                indexing: sparse_index_base_t::Type,
+                block_layout: onemkl_sys::sparse_layout_t::Type,
+                rows: c_int, cols: c_int, block_size: c_int,
+                rows_start: *mut c_int,
+                rows_end: *mut c_int,
+                col_indx: *mut c_int,
+                values: *mut Self,
+            ) -> sparse_status_t::Type {
+                unsafe {
+                    sys::$create_bsr(
+                        a, indexing, block_layout, rows, cols, block_size,
+                        rows_start, rows_end, col_indx, values,
                     )
                 }
             }
@@ -115,18 +199,26 @@ macro_rules! impl_sparse_real {
 
 impl_sparse_real!(
     f32,
-    create_csr=mkl_sparse_s_create_csr, mv=mkl_sparse_s_mv,
-    mm=mkl_sparse_s_mm, trsv=mkl_sparse_s_trsv,
+    create_csr=mkl_sparse_s_create_csr,
+    create_coo=mkl_sparse_s_create_coo,
+    create_csc=mkl_sparse_s_create_csc,
+    create_bsr=mkl_sparse_s_create_bsr,
+    mv=mkl_sparse_s_mv, mm=mkl_sparse_s_mm, trsv=mkl_sparse_s_trsv,
 );
 impl_sparse_real!(
     f64,
-    create_csr=mkl_sparse_d_create_csr, mv=mkl_sparse_d_mv,
-    mm=mkl_sparse_d_mm, trsv=mkl_sparse_d_trsv,
+    create_csr=mkl_sparse_d_create_csr,
+    create_coo=mkl_sparse_d_create_coo,
+    create_csc=mkl_sparse_d_create_csc,
+    create_bsr=mkl_sparse_d_create_bsr,
+    mv=mkl_sparse_d_mv, mm=mkl_sparse_d_mm, trsv=mkl_sparse_d_trsv,
 );
 
 macro_rules! impl_sparse_complex {
     ($ty:ty,
-        create_csr=$create:ident, mv=$mv:ident, mm=$mm:ident, trsv=$trsv:ident,
+        create_csr=$create:ident, create_coo=$create_coo:ident,
+        create_csc=$create_csc:ident, create_bsr=$create_bsr:ident,
+        mv=$mv:ident, mm=$mm:ident, trsv=$trsv:ident,
     ) => {
         impl SparseScalar for $ty {
             unsafe fn sparse_create_csr(
@@ -142,6 +234,51 @@ macro_rules! impl_sparse_complex {
                     sys::$create(
                         a, indexing, rows, cols, rows_start, rows_end, col_indx,
                         values.cast(),
+                    )
+                }
+            }
+            unsafe fn sparse_create_coo(
+                a: *mut sparse_matrix_t,
+                indexing: sparse_index_base_t::Type,
+                rows: c_int, cols: c_int, nnz: c_int,
+                row_indx: *mut c_int, col_indx: *mut c_int,
+                values: *mut Self,
+            ) -> sparse_status_t::Type {
+                unsafe {
+                    sys::$create_coo(
+                        a, indexing, rows, cols, nnz, row_indx, col_indx, values.cast(),
+                    )
+                }
+            }
+            unsafe fn sparse_create_csc(
+                a: *mut sparse_matrix_t,
+                indexing: sparse_index_base_t::Type,
+                rows: c_int, cols: c_int,
+                cols_start: *mut c_int, cols_end: *mut c_int,
+                row_indx: *mut c_int,
+                values: *mut Self,
+            ) -> sparse_status_t::Type {
+                unsafe {
+                    sys::$create_csc(
+                        a, indexing, rows, cols, cols_start, cols_end, row_indx,
+                        values.cast(),
+                    )
+                }
+            }
+            unsafe fn sparse_create_bsr(
+                a: *mut sparse_matrix_t,
+                indexing: sparse_index_base_t::Type,
+                block_layout: onemkl_sys::sparse_layout_t::Type,
+                rows: c_int, cols: c_int, block_size: c_int,
+                rows_start: *mut c_int,
+                rows_end: *mut c_int,
+                col_indx: *mut c_int,
+                values: *mut Self,
+            ) -> sparse_status_t::Type {
+                unsafe {
+                    sys::$create_bsr(
+                        a, indexing, block_layout, rows, cols, block_size,
+                        rows_start, rows_end, col_indx, values.cast(),
                     )
                 }
             }
@@ -196,11 +333,17 @@ macro_rules! impl_sparse_complex {
 
 impl_sparse_complex!(
     Complex32,
-    create_csr=mkl_sparse_c_create_csr, mv=mkl_sparse_c_mv,
-    mm=mkl_sparse_c_mm, trsv=mkl_sparse_c_trsv,
+    create_csr=mkl_sparse_c_create_csr,
+    create_coo=mkl_sparse_c_create_coo,
+    create_csc=mkl_sparse_c_create_csc,
+    create_bsr=mkl_sparse_c_create_bsr,
+    mv=mkl_sparse_c_mv, mm=mkl_sparse_c_mm, trsv=mkl_sparse_c_trsv,
 );
 impl_sparse_complex!(
     Complex64,
-    create_csr=mkl_sparse_z_create_csr, mv=mkl_sparse_z_mv,
-    mm=mkl_sparse_z_mm, trsv=mkl_sparse_z_trsv,
+    create_csr=mkl_sparse_z_create_csr,
+    create_coo=mkl_sparse_z_create_coo,
+    create_csc=mkl_sparse_z_create_csc,
+    create_bsr=mkl_sparse_z_create_bsr,
+    mv=mkl_sparse_z_mv, mm=mkl_sparse_z_mm, trsv=mkl_sparse_z_trsv,
 );
