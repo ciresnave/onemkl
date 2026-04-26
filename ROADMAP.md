@@ -32,7 +32,7 @@ function(s).
 | LAPACK | Common | Linear solve, QR, LS, eigenvalue (incl. RRR + D&C), SVD, banded, packed, generalized |
 | Sparse BLAS (IE) | MVP+ | CSR / COO / CSC / BSR construction; `mv`/`mm`/`trsv`/`optimize` + Sparse QR factor / solve |
 | PARDISO | MVP+ | Factor + solve, multi-RHS, cached factorization, diagonal extraction, save/restore handle |
-| DSS | MVP | Symmetric SPD solve, multi-RHS |
+| DSS | Common | Real + complex (single + double precision) factor / solve, multi-RHS, statistics (timing / memory / determinant / inertia) |
 | ISS (CG, FGMRES) | MVP | Closure-driven mat-vec; preconditioned CG |
 | Preconditioners | MVP | ILU0, ILUT |
 | FEAST | MVP | Dense symmetric / Hermitian; CSR / banded / generalized / RCI still TODO |
@@ -68,8 +68,9 @@ Move every domain currently at MVP up to Common. Specifically:
   `with_diagonal_enabled` / `get_diagonal`, `save_handle` /
   `load_handle` / `delete_handle_files`); `pardiso_64`,
   `mkl_pardiso_pivot`, `pardiso_export`.
-- **DSS**: complex matrices, statistics readout, generalized symmetric
-  options.
+- **DSS**: ~~complex matrices, statistics readout~~ (done — complex
+  factor/solve already covered, plus `factor_time` / `peak_memory_kb`
+  / `determinant` / `inertia` etc.); generalized symmetric options.
 - **ISS**: full RCI surface for users who want to drive their own
   loop; expose `?cg_get`/`?fgmres_get` reasoning codes.
 - **FEAST**: CSR-input drivers (`?feast_scsrev`, `?feast_hcsrev`),

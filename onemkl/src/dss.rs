@@ -16,6 +16,7 @@
 use core::ffi::c_int;
 use core::marker::PhantomData;
 use core::ptr;
+use std::ffi::CString;
 
 use num_complex::{Complex32, Complex64};
 use onemkl_sys as sys;
@@ -161,6 +162,105 @@ impl<T> Dss<T> {
         };
         check_dss(status)
     }
+
+    /// Time spent in the reorder phase, in seconds.
+    pub fn reorder_time(&mut self) -> Result<f64> {
+        Ok(self.read_statistics("ReorderTime", 1)?[0])
+    }
+
+    /// Time spent in the factor phase, in seconds.
+    pub fn factor_time(&mut self) -> Result<f64> {
+        Ok(self.read_statistics("FactorTime", 1)?[0])
+    }
+
+    /// Time spent in the solve phase, in seconds.
+    pub fn solve_time(&mut self) -> Result<f64> {
+        Ok(self.read_statistics("SolveTime", 1)?[0])
+    }
+
+    /// Peak memory used by the solver, in kilobytes.
+    pub fn peak_memory_kb(&mut self) -> Result<f64> {
+        Ok(self.read_statistics("Peakmem", 1)?[0])
+    }
+
+    /// Memory used to store the factor, in kilobytes.
+    pub fn factor_memory_kb(&mut self) -> Result<f64> {
+        Ok(self.read_statistics("Factormem", 1)?[0])
+    }
+
+    /// Memory used during the solve phase, in kilobytes.
+    pub fn solve_memory_kb(&mut self) -> Result<f64> {
+        Ok(self.read_statistics("Solvemem", 1)?[0])
+    }
+
+    /// Floating-point operation count of the factorization.
+    pub fn flops(&mut self) -> Result<f64> {
+        Ok(self.read_statistics("Flops", 1)?[0])
+    }
+
+    /// Determinant of the factored matrix in mantissa/power-of-ten
+    /// form: `det(A) = mantissa × 10^pow`. The mantissa carries the
+    /// sign. Wraps the `Determinant` statistic.
+    pub fn determinant(&mut self) -> Result<DssDeterminant> {
+        let v = self.read_statistics("Determinant", 2)?;
+        Ok(DssDeterminant {
+            pow: v[0],
+            mantissa: v[1],
+        })
+    }
+
+    /// Inertia of a symmetric indefinite matrix — count of positive,
+    /// negative, and zero eigenvalues of the factored matrix. Only
+    /// valid after factorization with [`Definite::Indefinite`] or
+    /// [`Definite::HermitianIndefinite`].
+    pub fn inertia(&mut self) -> Result<DssInertia> {
+        let v = self.read_statistics("Inertia", 3)?;
+        Ok(DssInertia {
+            positive: v[0] as i64,
+            negative: v[1] as i64,
+            zero: v[2] as i64,
+        })
+    }
+
+    fn read_statistics(&mut self, name: &str, count: usize) -> Result<Vec<f64>> {
+        let opt: c_int = sys::MKL_DSS_DEFAULTS as c_int;
+        let name_c = CString::new(name)
+            .map_err(|_| Error::InvalidArgument("statistic name contains a null byte"))?;
+        let mut out: Vec<f64> = vec![0.0; count];
+        let status = unsafe {
+            sys::dss_statistics_(
+                &mut self.handle,
+                &opt,
+                name_c.as_ptr(),
+                out.as_mut_ptr(),
+            )
+        };
+        check_dss(status)?;
+        Ok(out)
+    }
+}
+
+/// Determinant of a factored matrix, returned by
+/// [`Dss::determinant`]: `det(A) = mantissa × 10^pow`. The mantissa is
+/// signed.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct DssDeterminant {
+    /// Power-of-ten exponent of the determinant.
+    pub pow: f64,
+    /// Signed mantissa of the determinant.
+    pub mantissa: f64,
+}
+
+/// Inertia of a symmetric indefinite matrix, returned by
+/// [`Dss::inertia`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct DssInertia {
+    /// Number of positive eigenvalues.
+    pub positive: i64,
+    /// Number of zero eigenvalues (i.e. nullity).
+    pub zero: i64,
+    /// Number of negative eigenvalues.
+    pub negative: i64,
 }
 
 impl Dss<f64> {

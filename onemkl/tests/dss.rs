@@ -58,3 +58,56 @@ fn solve_two_rhs() {
     assert_abs_diff_eq!(x[5], 2.0, epsilon = 1e-10);
 }
 
+#[test]
+fn statistics_after_factor() {
+    // Tridiagonal: tridiag(-1, 4, -1); determinant of 3x3 case is
+    // 4 * (4*4 - 1) - (-1) * (-4 - 0) = 4*15 - 4 = 56.
+    //
+    // 1-based upper-triangular CSR.
+    let row_ptr = vec![1_i32, 3, 5, 6];
+    let col_idx = vec![1_i32, 2, 2, 3, 3];
+    let values = vec![4.0_f64, -1.0, 4.0, -1.0, 4.0];
+
+    let mut dss = Dss::<f64>::new().unwrap();
+    dss.define_structure(Symmetry::Symmetric, 3, 3, &row_ptr, &col_idx, IndexBase::One)
+        .unwrap();
+    dss.reorder().unwrap();
+    dss.factor_real(Definite::Indefinite, &values).unwrap();
+
+    // Time / memory / flops are non-negative but otherwise environment-dependent.
+    assert!(dss.factor_time().unwrap() >= 0.0);
+    assert!(dss.peak_memory_kb().unwrap() >= 0.0);
+    assert!(dss.factor_memory_kb().unwrap() >= 0.0);
+    assert!(dss.flops().unwrap() >= 0.0);
+
+    let det = dss.determinant().unwrap();
+    let recovered = det.mantissa * 10.0_f64.powf(det.pow);
+    assert_abs_diff_eq!(recovered, 56.0, epsilon = 1e-8);
+}
+
+#[test]
+fn inertia_for_indefinite_matrix() {
+    // Tridiagonal mostly-positive matrix that is still indefinite. Use
+    // diag(2, 0, -3) connected via small off-diagonals so DSS doesn't
+    // shortcut to a diagonal-matrix path.
+    //   [[ 2,  1,  0],
+    //    [ 1,  0,  1],
+    //    [ 0,  1, -3]]
+    // Eigenvalues are roughly { 2.30, -3.13, -0.17 } → 1 positive, 2 negative.
+    let row_ptr = vec![1_i32, 3, 5, 6];
+    let col_idx = vec![1_i32, 2, 2, 3, 3];
+    let values = vec![2.0_f64, 1.0, 0.0, 1.0, -3.0];
+
+    let mut dss = Dss::<f64>::new().unwrap();
+    dss.define_structure(Symmetry::Symmetric, 3, 3, &row_ptr, &col_idx, IndexBase::One)
+        .unwrap();
+    dss.reorder().unwrap();
+    dss.factor_real(Definite::Indefinite, &values).unwrap();
+
+    let inertia = dss.inertia().unwrap();
+    assert_eq!(inertia.positive + inertia.negative + inertia.zero, 3);
+    assert_eq!(inertia.positive, 1);
+    assert_eq!(inertia.negative, 2);
+    assert_eq!(inertia.zero, 0);
+}
+
