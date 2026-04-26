@@ -304,6 +304,29 @@ pub trait RealLapackScalar: LapackScalar + RealScalar {
         d: *const Self, e: *const Self,
         b: *mut Self, ldb: MKL_INT,
     ) -> i32;
+
+    /// `LAPACKE_*sygv` — generalized symmetric-definite eigenproblem
+    /// `A x = lambda B x` (`itype = 1`), `A B x = lambda x` (`= 2`),
+    /// or `B A x = lambda x` (`= 3`).
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn lapacke_sygv(
+        layout: c_int, itype: c_int, jobz: c_char, uplo: c_char, n: MKL_INT,
+        a: *mut Self, lda: MKL_INT,
+        b: *mut Self, ldb: MKL_INT,
+        w: *mut Self,
+    ) -> i32;
+
+    /// `LAPACKE_*ggev` (real) — generalized non-symmetric eigenproblem.
+    /// Eigenvalues are returned as (alphar + i*alphai) / beta.
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn lapacke_ggev(
+        layout: c_int, jobvl: c_char, jobvr: c_char, n: MKL_INT,
+        a: *mut Self, lda: MKL_INT,
+        b: *mut Self, ldb: MKL_INT,
+        alphar: *mut Self, alphai: *mut Self, beta: *mut Self,
+        vl: *mut Self, ldvl: MKL_INT,
+        vr: *mut Self, ldvr: MKL_INT,
+    ) -> i32;
 }
 
 /// Complex-only LAPACK operations.
@@ -367,6 +390,29 @@ pub trait ComplexLapackScalar: LapackScalar + ComplexScalar {
         ap: *const Self, ipiv: *const MKL_INT,
         b: *mut Self, ldb: MKL_INT,
     ) -> i32;
+
+    /// `LAPACKE_*hegv` — generalized Hermitian-definite eigenproblem
+    /// (`itype` semantics same as `sygv`). Eigenvalues `w` are real.
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn lapacke_hegv(
+        layout: c_int, itype: c_int, jobz: c_char, uplo: c_char, n: MKL_INT,
+        a: *mut Self, lda: MKL_INT,
+        b: *mut Self, ldb: MKL_INT,
+        w: *mut Self::Real,
+    ) -> i32;
+
+    /// `LAPACKE_*ggev` (complex) — generalized non-symmetric
+    /// eigenproblem. Eigenvalues are returned as `alpha / beta`,
+    /// each complex.
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn lapacke_ggev_complex(
+        layout: c_int, jobvl: c_char, jobvr: c_char, n: MKL_INT,
+        a: *mut Self, lda: MKL_INT,
+        b: *mut Self, ldb: MKL_INT,
+        alpha: *mut Self, beta: *mut Self,
+        vl: *mut Self, ldvl: MKL_INT,
+        vr: *mut Self, ldvr: MKL_INT,
+    ) -> i32;
 }
 
 // =====================================================================
@@ -387,6 +433,7 @@ macro_rules! impl_lapack_real {
         ptsv=$ptsv:ident, pttrf=$pttrf:ident, pttrs=$pttrs:ident,
         spsv=$spsv:ident, sptrf=$sptrf:ident, sptrs=$sptrs:ident,
         ppsv=$ppsv:ident, pptrf=$pptrf:ident, pptrs=$pptrs:ident,
+        sygv=$sygv:ident, ggev_real=$ggev_real:ident,
     ) => {
         impl LapackScalar for $ty {
             unsafe fn lapacke_gesv(
@@ -657,6 +704,29 @@ macro_rules! impl_lapack_real {
                     )
                 }
             }
+            unsafe fn lapacke_sygv(
+                layout: c_int, itype: c_int, jobz: c_char, uplo: c_char, n: MKL_INT,
+                a: *mut Self, lda: MKL_INT,
+                b: *mut Self, ldb: MKL_INT,
+                w: *mut Self,
+            ) -> i32 {
+                unsafe { sys::$sygv(layout, itype, jobz, uplo, n, a, lda, b, ldb, w) }
+            }
+            unsafe fn lapacke_ggev(
+                layout: c_int, jobvl: c_char, jobvr: c_char, n: MKL_INT,
+                a: *mut Self, lda: MKL_INT,
+                b: *mut Self, ldb: MKL_INT,
+                alphar: *mut Self, alphai: *mut Self, beta: *mut Self,
+                vl: *mut Self, ldvl: MKL_INT,
+                vr: *mut Self, ldvr: MKL_INT,
+            ) -> i32 {
+                unsafe {
+                    sys::$ggev_real(
+                        layout, jobvl, jobvr, n, a, lda, b, ldb,
+                        alphar, alphai, beta, vl, ldvl, vr, ldvr,
+                    )
+                }
+            }
         }
     };
 }
@@ -675,6 +745,7 @@ impl_lapack_real! {
     ptsv=LAPACKE_sptsv, pttrf=LAPACKE_spttrf, pttrs=LAPACKE_spttrs,
     spsv=LAPACKE_sspsv, sptrf=LAPACKE_ssptrf, sptrs=LAPACKE_ssptrs,
     ppsv=LAPACKE_sppsv, pptrf=LAPACKE_spptrf, pptrs=LAPACKE_spptrs,
+    sygv=LAPACKE_ssygv, ggev_real=LAPACKE_sggev,
 }
 
 impl_lapack_real! {
@@ -691,6 +762,7 @@ impl_lapack_real! {
     ptsv=LAPACKE_dptsv, pttrf=LAPACKE_dpttrf, pttrs=LAPACKE_dpttrs,
     spsv=LAPACKE_dspsv, sptrf=LAPACKE_dsptrf, sptrs=LAPACKE_dsptrs,
     ppsv=LAPACKE_dppsv, pptrf=LAPACKE_dpptrf, pptrs=LAPACKE_dpptrs,
+    sygv=LAPACKE_dsygv, ggev_real=LAPACKE_dggev,
 }
 
 macro_rules! impl_lapack_complex {
@@ -708,6 +780,7 @@ macro_rules! impl_lapack_complex {
         spsv=$spsv:ident, sptrf=$sptrf:ident, sptrs=$sptrs:ident,
         ppsv=$ppsv:ident, pptrf=$pptrf:ident, pptrs=$pptrs:ident,
         hpsv=$hpsv:ident, hptrf=$hptrf:ident, hptrs=$hptrs:ident,
+        hegv=$hegv:ident, ggev_complex=$ggev_complex:ident,
     ) => {
         impl LapackScalar for $ty {
             unsafe fn lapacke_gesv(
@@ -1039,6 +1112,34 @@ macro_rules! impl_lapack_complex {
                     sys::$hptrs(layout, uplo, n, nrhs, ap.cast(), ipiv, b.cast(), ldb)
                 }
             }
+            unsafe fn lapacke_hegv(
+                layout: c_int, itype: c_int, jobz: c_char, uplo: c_char, n: MKL_INT,
+                a: *mut Self, lda: MKL_INT,
+                b: *mut Self, ldb: MKL_INT,
+                w: *mut Self::Real,
+            ) -> i32 {
+                unsafe {
+                    sys::$hegv(
+                        layout, itype, jobz, uplo, n, a.cast(), lda, b.cast(), ldb, w,
+                    )
+                }
+            }
+            unsafe fn lapacke_ggev_complex(
+                layout: c_int, jobvl: c_char, jobvr: c_char, n: MKL_INT,
+                a: *mut Self, lda: MKL_INT,
+                b: *mut Self, ldb: MKL_INT,
+                alpha: *mut Self, beta: *mut Self,
+                vl: *mut Self, ldvl: MKL_INT,
+                vr: *mut Self, ldvr: MKL_INT,
+            ) -> i32 {
+                unsafe {
+                    sys::$ggev_complex(
+                        layout, jobvl, jobvr, n, a.cast(), lda, b.cast(), ldb,
+                        alpha.cast(), beta.cast(),
+                        vl.cast(), ldvl, vr.cast(), ldvr,
+                    )
+                }
+            }
         }
     };
 }
@@ -1058,6 +1159,7 @@ impl_lapack_complex! {
     spsv=LAPACKE_cspsv, sptrf=LAPACKE_csptrf, sptrs=LAPACKE_csptrs,
     ppsv=LAPACKE_cppsv, pptrf=LAPACKE_cpptrf, pptrs=LAPACKE_cpptrs,
     hpsv=LAPACKE_chpsv, hptrf=LAPACKE_chptrf, hptrs=LAPACKE_chptrs,
+    hegv=LAPACKE_chegv, ggev_complex=LAPACKE_cggev,
 }
 
 impl_lapack_complex! {
@@ -1075,4 +1177,5 @@ impl_lapack_complex! {
     spsv=LAPACKE_zspsv, sptrf=LAPACKE_zsptrf, sptrs=LAPACKE_zsptrs,
     ppsv=LAPACKE_zppsv, pptrf=LAPACKE_zpptrf, pptrs=LAPACKE_zpptrs,
     hpsv=LAPACKE_zhpsv, hptrf=LAPACKE_zhptrf, hptrs=LAPACKE_zhptrs,
+    hegv=LAPACKE_zhegv, ggev_complex=LAPACKE_zggev,
 }

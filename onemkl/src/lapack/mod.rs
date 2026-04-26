@@ -1409,3 +1409,219 @@ pub fn hptrs<T: ComplexLapackScalar>(
     };
     check_info(info)
 }
+
+// =====================================================================
+// Generalized eigenvalue problems
+// =====================================================================
+
+/// Type of generalized eigenproblem to solve in [`sygv`] / [`hegv`]:
+///
+/// 1. `A x = lambda B x`
+/// 2. `A B x = lambda x`
+/// 3. `B A x = lambda x`
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum GeneralizedEigenType {
+    /// `A x = lambda B x` (the default).
+    AxLambdaBx,
+    /// `A B x = lambda x`.
+    AbxLambdaX,
+    /// `B A x = lambda x`.
+    BaxLambdaX,
+}
+
+impl GeneralizedEigenType {
+    #[inline]
+    fn as_int(self) -> core::ffi::c_int {
+        match self {
+            Self::AxLambdaBx => 1,
+            Self::AbxLambdaX => 2,
+            Self::BaxLambdaX => 3,
+        }
+    }
+}
+
+/// Solve a real symmetric-definite generalized eigenproblem.
+/// `A` and `B` are real symmetric `n × n`; `B` must additionally be
+/// positive-definite. Eigenvalues are written to `w`. With
+/// [`Job::Compute`] the eigenvectors overwrite `A`.
+#[allow(clippy::too_many_arguments)]
+pub fn sygv<T: RealLapackScalar>(
+    itype: GeneralizedEigenType,
+    jobz: Job,
+    uplo: UpLo,
+    a: &mut MatrixMut<'_, T>,
+    b: &mut MatrixMut<'_, T>,
+    w: &mut [T],
+) -> Result<()> {
+    let n = ensure_square(a)?;
+    if b.rows() != n || b.cols() != n {
+        return Err(Error::InvalidArgument("B must have the same shape as A"));
+    }
+    let layout = ensure_layout(&[a.layout(), b.layout()])?;
+    if w.len() < n {
+        return Err(Error::InvalidArgument("w must have at least n entries"));
+    }
+    let info = unsafe {
+        T::lapacke_sygv(
+            layout.as_lapack(),
+            itype.as_int(),
+            jobz.as_char() as core::ffi::c_char,
+            uplo.as_char() as core::ffi::c_char,
+            dim_to_mkl_int(n)?,
+            a.as_mut_ptr(),
+            dim_to_mkl_int(a.leading_dim())?,
+            b.as_mut_ptr(),
+            dim_to_mkl_int(b.leading_dim())?,
+            w.as_mut_ptr(),
+        )
+    };
+    check_info(info)
+}
+
+/// Solve a complex Hermitian-definite generalized eigenproblem.
+/// `A` is Hermitian; `B` is Hermitian positive-definite. Eigenvalues
+/// `w` are real (Hermitian guarantees this).
+#[allow(clippy::too_many_arguments)]
+pub fn hegv<T: ComplexLapackScalar>(
+    itype: GeneralizedEigenType,
+    jobz: Job,
+    uplo: UpLo,
+    a: &mut MatrixMut<'_, T>,
+    b: &mut MatrixMut<'_, T>,
+    w: &mut [T::Real],
+) -> Result<()> {
+    let n = ensure_square(a)?;
+    if b.rows() != n || b.cols() != n {
+        return Err(Error::InvalidArgument("B must have the same shape as A"));
+    }
+    let layout = ensure_layout(&[a.layout(), b.layout()])?;
+    if w.len() < n {
+        return Err(Error::InvalidArgument("w must have at least n entries"));
+    }
+    let info = unsafe {
+        T::lapacke_hegv(
+            layout.as_lapack(),
+            itype.as_int(),
+            jobz.as_char() as core::ffi::c_char,
+            uplo.as_char() as core::ffi::c_char,
+            dim_to_mkl_int(n)?,
+            a.as_mut_ptr(),
+            dim_to_mkl_int(a.leading_dim())?,
+            b.as_mut_ptr(),
+            dim_to_mkl_int(b.leading_dim())?,
+            w.as_mut_ptr(),
+        )
+    };
+    check_info(info)
+}
+
+/// Real general (non-symmetric) generalized eigenproblem
+/// `A x = lambda B x`. Eigenvalues are returned as
+/// `(alphar + i * alphai) / beta`. Real types only.
+#[allow(clippy::too_many_arguments)]
+pub fn ggev_real<T: RealLapackScalar>(
+    jobvl: Job,
+    jobvr: Job,
+    a: &mut MatrixMut<'_, T>,
+    b: &mut MatrixMut<'_, T>,
+    alphar: &mut [T],
+    alphai: &mut [T],
+    beta: &mut [T],
+    vl: Option<&mut MatrixMut<'_, T>>,
+    vr: Option<&mut MatrixMut<'_, T>>,
+) -> Result<()> {
+    let n = ensure_square(a)?;
+    if b.rows() != n || b.cols() != n {
+        return Err(Error::InvalidArgument("B must have the same shape as A"));
+    }
+    let layout = ensure_layout(&[a.layout(), b.layout()])?;
+    if alphar.len() < n || alphai.len() < n || beta.len() < n {
+        return Err(Error::InvalidArgument(
+            "alphar / alphai / beta must each have at least n entries",
+        ));
+    }
+    let lda = dim_to_mkl_int(a.leading_dim())?;
+    let ldb = dim_to_mkl_int(b.leading_dim())?;
+    let (vl_ptr, ldvl) = match vl {
+        Some(m) => (m.as_mut_ptr(), dim_to_mkl_int(m.leading_dim())?),
+        None => (core::ptr::null_mut(), dim_to_mkl_int(n.max(1))?),
+    };
+    let (vr_ptr, ldvr) = match vr {
+        Some(m) => (m.as_mut_ptr(), dim_to_mkl_int(m.leading_dim())?),
+        None => (core::ptr::null_mut(), dim_to_mkl_int(n.max(1))?),
+    };
+    let info = unsafe {
+        T::lapacke_ggev(
+            layout.as_lapack(),
+            jobvl.as_char() as core::ffi::c_char,
+            jobvr.as_char() as core::ffi::c_char,
+            dim_to_mkl_int(n)?,
+            a.as_mut_ptr(),
+            lda,
+            b.as_mut_ptr(),
+            ldb,
+            alphar.as_mut_ptr(),
+            alphai.as_mut_ptr(),
+            beta.as_mut_ptr(),
+            vl_ptr,
+            ldvl,
+            vr_ptr,
+            ldvr,
+        )
+    };
+    check_info(info)
+}
+
+/// Complex general generalized eigenproblem. Eigenvalues are
+/// returned as `alpha / beta`, both complex.
+#[allow(clippy::too_many_arguments)]
+pub fn ggev_complex<T: ComplexLapackScalar>(
+    jobvl: Job,
+    jobvr: Job,
+    a: &mut MatrixMut<'_, T>,
+    b: &mut MatrixMut<'_, T>,
+    alpha: &mut [T],
+    beta: &mut [T],
+    vl: Option<&mut MatrixMut<'_, T>>,
+    vr: Option<&mut MatrixMut<'_, T>>,
+) -> Result<()> {
+    let n = ensure_square(a)?;
+    if b.rows() != n || b.cols() != n {
+        return Err(Error::InvalidArgument("B must have the same shape as A"));
+    }
+    let layout = ensure_layout(&[a.layout(), b.layout()])?;
+    if alpha.len() < n || beta.len() < n {
+        return Err(Error::InvalidArgument(
+            "alpha / beta must each have at least n entries",
+        ));
+    }
+    let lda = dim_to_mkl_int(a.leading_dim())?;
+    let ldb = dim_to_mkl_int(b.leading_dim())?;
+    let (vl_ptr, ldvl) = match vl {
+        Some(m) => (m.as_mut_ptr(), dim_to_mkl_int(m.leading_dim())?),
+        None => (core::ptr::null_mut(), dim_to_mkl_int(n.max(1))?),
+    };
+    let (vr_ptr, ldvr) = match vr {
+        Some(m) => (m.as_mut_ptr(), dim_to_mkl_int(m.leading_dim())?),
+        None => (core::ptr::null_mut(), dim_to_mkl_int(n.max(1))?),
+    };
+    let info = unsafe {
+        T::lapacke_ggev_complex(
+            layout.as_lapack(),
+            jobvl.as_char() as core::ffi::c_char,
+            jobvr.as_char() as core::ffi::c_char,
+            dim_to_mkl_int(n)?,
+            a.as_mut_ptr(),
+            lda,
+            b.as_mut_ptr(),
+            ldb,
+            alpha.as_mut_ptr(),
+            beta.as_mut_ptr(),
+            vl_ptr,
+            ldvl,
+            vr_ptr,
+            ldvr,
+        )
+    };
+    check_info(info)
+}
