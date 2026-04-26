@@ -58,6 +58,30 @@ impl Default for IssOptions {
     }
 }
 
+/// Diagnostic information returned alongside the converged solution.
+#[derive(Debug, Clone, Copy)]
+pub struct IssResult {
+    /// Iteration count reported by `*_get`.
+    pub iterations: usize,
+    /// `‖r₀‖` — norm of the initial residual.
+    pub initial_residual_norm: f64,
+    /// `‖rₖ‖` — norm of the final residual.
+    pub final_residual_norm: f64,
+    /// Stopping condition that ended the loop.
+    pub stop_reason: IssStopReason,
+}
+
+/// Why the iterative solver stopped.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum IssStopReason {
+    /// `‖rₖ‖` is below the configured relative or absolute tolerance.
+    Converged,
+    /// The loop hit `max_iterations` without converging.
+    MaxIterations,
+    /// The solver returned a non-standard `rci_request` code.
+    Other(i32),
+}
+
 const RCI_OK: c_int = 0;
 const RCI_NEED_MV: c_int = 1;
 const RCI_NEED_PRECOND: c_int = 3;
@@ -77,7 +101,7 @@ pub fn solve_cg<F>(
     x: &mut [f64],
     opts: IssOptions,
     mat_vec: F,
-) -> Result<usize>
+) -> Result<IssResult>
 where
     F: FnMut(&[f64], &mut [f64]),
 {
@@ -92,7 +116,7 @@ pub fn solve_cg_preconditioned<F, P>(
     opts: IssOptions,
     mut mat_vec: F,
     mut precondition: Option<P>,
-) -> Result<usize>
+) -> Result<IssResult>
 where
     F: FnMut(&[f64], &mut [f64]),
     P: FnMut(&[f64], &mut [f64]),
@@ -150,6 +174,7 @@ where
     }
 
     // RCI loop.
+    let mut last_rci;
     loop {
         unsafe {
             sys::dcg(
@@ -162,6 +187,7 @@ where
                 tmp.as_mut_ptr(),
             );
         }
+        last_rci = rci;
         match rci {
             RCI_OK => break,
             RCI_NEED_MV => {
@@ -205,7 +231,13 @@ where
             &mut itercount,
         );
     }
-    Ok(itercount.max(0) as usize)
+    let iterations = itercount.max(0) as usize;
+    Ok(IssResult {
+        iterations,
+        initial_residual_norm: dpar[2],
+        final_residual_norm: dpar[4],
+        stop_reason: classify_stop(last_rci, iterations, opts.max_iterations, dpar[4], &dpar),
+    })
 }
 
 // =====================================================================
@@ -221,7 +253,7 @@ pub fn solve_fgmres<F>(
     x: &mut [f64],
     opts: IssOptions,
     mut mat_vec: F,
-) -> Result<usize>
+) -> Result<IssResult>
 where
     F: FnMut(&[f64], &mut [f64]),
 {
@@ -283,6 +315,7 @@ where
         return Err(Error::LapackComputationFailure { info: rci });
     }
 
+    let mut last_rci;
     loop {
         unsafe {
             sys::dfgmres(
@@ -295,6 +328,7 @@ where
                 tmp.as_mut_ptr(),
             );
         }
+        last_rci = rci;
         match rci {
             RCI_OK => break,
             RCI_NEED_MV => {
@@ -347,5 +381,32 @@ where
             &mut itercount,
         );
     }
-    Ok(itercount.max(0) as usize)
+    let iterations = itercount.max(0) as usize;
+    Ok(IssResult {
+        iterations,
+        initial_residual_norm: dpar[2],
+        final_residual_norm: dpar[4],
+        stop_reason: classify_stop(last_rci, iterations, opts.max_iterations, dpar[4], &dpar),
+    })
+}
+
+fn classify_stop(
+    last_rci: c_int,
+    iterations: usize,
+    max_iterations: usize,
+    final_residual: f64,
+    dpar: &[f64; 128],
+) -> IssStopReason {
+    if last_rci == 0 {
+        // dpar[3] is the residual threshold computed by *_check.
+        if final_residual <= dpar[3] {
+            IssStopReason::Converged
+        } else if iterations >= max_iterations {
+            IssStopReason::MaxIterations
+        } else {
+            IssStopReason::Converged
+        }
+    } else {
+        IssStopReason::Other(last_rci as i32)
+    }
 }

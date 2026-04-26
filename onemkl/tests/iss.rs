@@ -4,7 +4,7 @@
 
 use approx::assert_abs_diff_eq;
 
-use onemkl::iss::{solve_cg, solve_fgmres, IssOptions};
+use onemkl::iss::{solve_cg, solve_fgmres, IssOptions, IssStopReason};
 
 #[test]
 fn cg_solves_3x3_spd() {
@@ -17,8 +17,10 @@ fn cg_solves_3x3_spd() {
         out[1] = -v[0] + 4.0 * v[1] - v[2];
         out[2] = -v[1] + 4.0 * v[2];
     };
-    let iters = solve_cg(&b, &mut x, IssOptions::default(), mat_vec).unwrap();
-    assert!(iters <= 3, "CG took {} iterations on 3x3 SPD", iters);
+    let res = solve_cg(&b, &mut x, IssOptions::default(), mat_vec).unwrap();
+    assert!(res.iterations <= 3, "CG took {} iterations on 3x3 SPD", res.iterations);
+    assert_eq!(res.stop_reason, IssStopReason::Converged);
+    assert!(res.final_residual_norm <= res.initial_residual_norm);
     assert_abs_diff_eq!(x[0], 1.0, epsilon = 1e-8);
     assert_abs_diff_eq!(x[1], 1.0, epsilon = 1e-8);
     assert_abs_diff_eq!(x[2], 1.0, epsilon = 1e-8);
@@ -57,7 +59,9 @@ fn fgmres_solves_nonsymmetric_3x3() {
         max_iterations: 100,
         restart_length: 10,
     };
-    let _iters = solve_fgmres(&mut b, &mut x, opts, mat_vec).unwrap();
+    let res = solve_fgmres(&mut b, &mut x, opts, mat_vec).unwrap();
+    assert_eq!(res.stop_reason, IssStopReason::Converged);
+    assert!(res.final_residual_norm <= res.initial_residual_norm);
     assert_abs_diff_eq!(x[0], 1.0, epsilon = 1e-6);
     assert_abs_diff_eq!(x[1], 1.0, epsilon = 1e-6);
     assert_abs_diff_eq!(x[2], 1.0, epsilon = 1e-6);
