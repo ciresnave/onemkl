@@ -28,6 +28,7 @@ pub mod enums;
 pub mod error;
 pub mod lapack;
 pub mod matrix;
+pub mod rng;
 pub mod scalar;
 pub mod vm;
 
