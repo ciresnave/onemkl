@@ -218,6 +218,54 @@ pub trait LapackScalar: Scalar {
         n: MKL_INT,
         d: *mut Self::Real, e: *mut Self,
     ) -> i32;
+
+    // ---- Packed ----
+
+    /// `LAPACKE_*spsv` — symmetric packed solve.
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn lapacke_spsv(
+        layout: c_int, uplo: c_char,
+        n: MKL_INT, nrhs: MKL_INT,
+        ap: *mut Self, ipiv: *mut MKL_INT,
+        b: *mut Self, ldb: MKL_INT,
+    ) -> i32;
+
+    /// `LAPACKE_*sptrf` — symmetric packed factorization.
+    unsafe fn lapacke_sptrf(
+        layout: c_int, uplo: c_char,
+        n: MKL_INT, ap: *mut Self, ipiv: *mut MKL_INT,
+    ) -> i32;
+
+    /// `LAPACKE_*sptrs` — solve with symmetric packed factor.
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn lapacke_sptrs(
+        layout: c_int, uplo: c_char,
+        n: MKL_INT, nrhs: MKL_INT,
+        ap: *const Self, ipiv: *const MKL_INT,
+        b: *mut Self, ldb: MKL_INT,
+    ) -> i32;
+
+    /// `LAPACKE_*ppsv` — PD packed Cholesky solve.
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn lapacke_ppsv(
+        layout: c_int, uplo: c_char,
+        n: MKL_INT, nrhs: MKL_INT,
+        ap: *mut Self, b: *mut Self, ldb: MKL_INT,
+    ) -> i32;
+
+    /// `LAPACKE_*pptrf` — PD packed Cholesky factorization.
+    unsafe fn lapacke_pptrf(
+        layout: c_int, uplo: c_char,
+        n: MKL_INT, ap: *mut Self,
+    ) -> i32;
+
+    /// `LAPACKE_*pptrs` — solve with PD packed Cholesky factor.
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn lapacke_pptrs(
+        layout: c_int, uplo: c_char,
+        n: MKL_INT, nrhs: MKL_INT,
+        ap: *const Self, b: *mut Self, ldb: MKL_INT,
+    ) -> i32;
 }
 
 /// Real-only LAPACK operations.
@@ -295,6 +343,30 @@ pub trait ComplexLapackScalar: LapackScalar + ComplexScalar {
         d: *const Self::Real, e: *const Self,
         b: *mut Self, ldb: MKL_INT,
     ) -> i32;
+
+    /// `LAPACKE_*hpsv` — Hermitian packed solve.
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn lapacke_hpsv(
+        layout: c_int, uplo: c_char,
+        n: MKL_INT, nrhs: MKL_INT,
+        ap: *mut Self, ipiv: *mut MKL_INT,
+        b: *mut Self, ldb: MKL_INT,
+    ) -> i32;
+
+    /// `LAPACKE_*hptrf` — Hermitian packed factorization.
+    unsafe fn lapacke_hptrf(
+        layout: c_int, uplo: c_char,
+        n: MKL_INT, ap: *mut Self, ipiv: *mut MKL_INT,
+    ) -> i32;
+
+    /// `LAPACKE_*hptrs` — solve with Hermitian packed factor.
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn lapacke_hptrs(
+        layout: c_int, uplo: c_char,
+        n: MKL_INT, nrhs: MKL_INT,
+        ap: *const Self, ipiv: *const MKL_INT,
+        b: *mut Self, ldb: MKL_INT,
+    ) -> i32;
 }
 
 // =====================================================================
@@ -313,6 +385,8 @@ macro_rules! impl_lapack_real {
         gtsv=$gtsv:ident, gttrf=$gttrf:ident, gttrs=$gttrs:ident,
         pbsv=$pbsv:ident, pbtrf=$pbtrf:ident, pbtrs=$pbtrs:ident,
         ptsv=$ptsv:ident, pttrf=$pttrf:ident, pttrs=$pttrs:ident,
+        spsv=$spsv:ident, sptrf=$sptrf:ident, sptrs=$sptrs:ident,
+        ppsv=$ppsv:ident, pptrf=$pptrf:ident, pptrs=$pptrs:ident,
     ) => {
         impl LapackScalar for $ty {
             unsafe fn lapacke_gesv(
@@ -505,6 +579,48 @@ macro_rules! impl_lapack_real {
             ) -> i32 {
                 unsafe { sys::$pttrf(n, d, e) }
             }
+            unsafe fn lapacke_spsv(
+                layout: c_int, uplo: c_char,
+                n: MKL_INT, nrhs: MKL_INT,
+                ap: *mut Self, ipiv: *mut MKL_INT,
+                b: *mut Self, ldb: MKL_INT,
+            ) -> i32 {
+                unsafe { sys::$spsv(layout, uplo, n, nrhs, ap, ipiv, b, ldb) }
+            }
+            unsafe fn lapacke_sptrf(
+                layout: c_int, uplo: c_char,
+                n: MKL_INT, ap: *mut Self, ipiv: *mut MKL_INT,
+            ) -> i32 {
+                unsafe { sys::$sptrf(layout, uplo, n, ap, ipiv) }
+            }
+            unsafe fn lapacke_sptrs(
+                layout: c_int, uplo: c_char,
+                n: MKL_INT, nrhs: MKL_INT,
+                ap: *const Self, ipiv: *const MKL_INT,
+                b: *mut Self, ldb: MKL_INT,
+            ) -> i32 {
+                unsafe { sys::$sptrs(layout, uplo, n, nrhs, ap, ipiv, b, ldb) }
+            }
+            unsafe fn lapacke_ppsv(
+                layout: c_int, uplo: c_char,
+                n: MKL_INT, nrhs: MKL_INT,
+                ap: *mut Self, b: *mut Self, ldb: MKL_INT,
+            ) -> i32 {
+                unsafe { sys::$ppsv(layout, uplo, n, nrhs, ap, b, ldb) }
+            }
+            unsafe fn lapacke_pptrf(
+                layout: c_int, uplo: c_char,
+                n: MKL_INT, ap: *mut Self,
+            ) -> i32 {
+                unsafe { sys::$pptrf(layout, uplo, n, ap) }
+            }
+            unsafe fn lapacke_pptrs(
+                layout: c_int, uplo: c_char,
+                n: MKL_INT, nrhs: MKL_INT,
+                ap: *const Self, b: *mut Self, ldb: MKL_INT,
+            ) -> i32 {
+                unsafe { sys::$pptrs(layout, uplo, n, nrhs, ap, b, ldb) }
+            }
         }
 
         impl RealLapackScalar for $ty {
@@ -557,6 +673,8 @@ impl_lapack_real! {
     gtsv=LAPACKE_sgtsv, gttrf=LAPACKE_sgttrf, gttrs=LAPACKE_sgttrs,
     pbsv=LAPACKE_spbsv, pbtrf=LAPACKE_spbtrf, pbtrs=LAPACKE_spbtrs,
     ptsv=LAPACKE_sptsv, pttrf=LAPACKE_spttrf, pttrs=LAPACKE_spttrs,
+    spsv=LAPACKE_sspsv, sptrf=LAPACKE_ssptrf, sptrs=LAPACKE_ssptrs,
+    ppsv=LAPACKE_sppsv, pptrf=LAPACKE_spptrf, pptrs=LAPACKE_spptrs,
 }
 
 impl_lapack_real! {
@@ -571,6 +689,8 @@ impl_lapack_real! {
     gtsv=LAPACKE_dgtsv, gttrf=LAPACKE_dgttrf, gttrs=LAPACKE_dgttrs,
     pbsv=LAPACKE_dpbsv, pbtrf=LAPACKE_dpbtrf, pbtrs=LAPACKE_dpbtrs,
     ptsv=LAPACKE_dptsv, pttrf=LAPACKE_dpttrf, pttrs=LAPACKE_dpttrs,
+    spsv=LAPACKE_dspsv, sptrf=LAPACKE_dsptrf, sptrs=LAPACKE_dsptrs,
+    ppsv=LAPACKE_dppsv, pptrf=LAPACKE_dpptrf, pptrs=LAPACKE_dpptrs,
 }
 
 macro_rules! impl_lapack_complex {
@@ -585,6 +705,9 @@ macro_rules! impl_lapack_complex {
         gtsv=$gtsv:ident, gttrf=$gttrf:ident, gttrs=$gttrs:ident,
         pbsv=$pbsv:ident, pbtrf=$pbtrf:ident, pbtrs=$pbtrs:ident,
         ptsv=$ptsv:ident, pttrf=$pttrf:ident, pttrs=$pttrs:ident,
+        spsv=$spsv:ident, sptrf=$sptrf:ident, sptrs=$sptrs:ident,
+        ppsv=$ppsv:ident, pptrf=$pptrf:ident, pptrs=$pptrs:ident,
+        hpsv=$hpsv:ident, hptrf=$hptrf:ident, hptrs=$hptrs:ident,
     ) => {
         impl LapackScalar for $ty {
             unsafe fn lapacke_gesv(
@@ -800,6 +923,56 @@ macro_rules! impl_lapack_complex {
             ) -> i32 {
                 unsafe { sys::$pttrf(n, d, e.cast()) }
             }
+            unsafe fn lapacke_spsv(
+                layout: c_int, uplo: c_char,
+                n: MKL_INT, nrhs: MKL_INT,
+                ap: *mut Self, ipiv: *mut MKL_INT,
+                b: *mut Self, ldb: MKL_INT,
+            ) -> i32 {
+                unsafe {
+                    sys::$spsv(layout, uplo, n, nrhs, ap.cast(), ipiv, b.cast(), ldb)
+                }
+            }
+            unsafe fn lapacke_sptrf(
+                layout: c_int, uplo: c_char,
+                n: MKL_INT, ap: *mut Self, ipiv: *mut MKL_INT,
+            ) -> i32 {
+                unsafe { sys::$sptrf(layout, uplo, n, ap.cast(), ipiv) }
+            }
+            unsafe fn lapacke_sptrs(
+                layout: c_int, uplo: c_char,
+                n: MKL_INT, nrhs: MKL_INT,
+                ap: *const Self, ipiv: *const MKL_INT,
+                b: *mut Self, ldb: MKL_INT,
+            ) -> i32 {
+                unsafe {
+                    sys::$sptrs(layout, uplo, n, nrhs, ap.cast(), ipiv, b.cast(), ldb)
+                }
+            }
+            unsafe fn lapacke_ppsv(
+                layout: c_int, uplo: c_char,
+                n: MKL_INT, nrhs: MKL_INT,
+                ap: *mut Self, b: *mut Self, ldb: MKL_INT,
+            ) -> i32 {
+                unsafe {
+                    sys::$ppsv(layout, uplo, n, nrhs, ap.cast(), b.cast(), ldb)
+                }
+            }
+            unsafe fn lapacke_pptrf(
+                layout: c_int, uplo: c_char,
+                n: MKL_INT, ap: *mut Self,
+            ) -> i32 {
+                unsafe { sys::$pptrf(layout, uplo, n, ap.cast()) }
+            }
+            unsafe fn lapacke_pptrs(
+                layout: c_int, uplo: c_char,
+                n: MKL_INT, nrhs: MKL_INT,
+                ap: *const Self, b: *mut Self, ldb: MKL_INT,
+            ) -> i32 {
+                unsafe {
+                    sys::$pptrs(layout, uplo, n, nrhs, ap.cast(), b.cast(), ldb)
+                }
+            }
         }
 
         impl ComplexLapackScalar for $ty {
@@ -840,6 +1013,32 @@ macro_rules! impl_lapack_complex {
                     )
                 }
             }
+            unsafe fn lapacke_hpsv(
+                layout: c_int, uplo: c_char,
+                n: MKL_INT, nrhs: MKL_INT,
+                ap: *mut Self, ipiv: *mut MKL_INT,
+                b: *mut Self, ldb: MKL_INT,
+            ) -> i32 {
+                unsafe {
+                    sys::$hpsv(layout, uplo, n, nrhs, ap.cast(), ipiv, b.cast(), ldb)
+                }
+            }
+            unsafe fn lapacke_hptrf(
+                layout: c_int, uplo: c_char,
+                n: MKL_INT, ap: *mut Self, ipiv: *mut MKL_INT,
+            ) -> i32 {
+                unsafe { sys::$hptrf(layout, uplo, n, ap.cast(), ipiv) }
+            }
+            unsafe fn lapacke_hptrs(
+                layout: c_int, uplo: c_char,
+                n: MKL_INT, nrhs: MKL_INT,
+                ap: *const Self, ipiv: *const MKL_INT,
+                b: *mut Self, ldb: MKL_INT,
+            ) -> i32 {
+                unsafe {
+                    sys::$hptrs(layout, uplo, n, nrhs, ap.cast(), ipiv, b.cast(), ldb)
+                }
+            }
         }
     };
 }
@@ -856,6 +1055,9 @@ impl_lapack_complex! {
     gtsv=LAPACKE_cgtsv, gttrf=LAPACKE_cgttrf, gttrs=LAPACKE_cgttrs,
     pbsv=LAPACKE_cpbsv, pbtrf=LAPACKE_cpbtrf, pbtrs=LAPACKE_cpbtrs,
     ptsv=LAPACKE_cptsv, pttrf=LAPACKE_cpttrf, pttrs=LAPACKE_cpttrs,
+    spsv=LAPACKE_cspsv, sptrf=LAPACKE_csptrf, sptrs=LAPACKE_csptrs,
+    ppsv=LAPACKE_cppsv, pptrf=LAPACKE_cpptrf, pptrs=LAPACKE_cpptrs,
+    hpsv=LAPACKE_chpsv, hptrf=LAPACKE_chptrf, hptrs=LAPACKE_chptrs,
 }
 
 impl_lapack_complex! {
@@ -870,4 +1072,7 @@ impl_lapack_complex! {
     gtsv=LAPACKE_zgtsv, gttrf=LAPACKE_zgttrf, gttrs=LAPACKE_zgttrs,
     pbsv=LAPACKE_zpbsv, pbtrf=LAPACKE_zpbtrf, pbtrs=LAPACKE_zpbtrs,
     ptsv=LAPACKE_zptsv, pttrf=LAPACKE_zpttrf, pttrs=LAPACKE_zpttrs,
+    spsv=LAPACKE_zspsv, sptrf=LAPACKE_zsptrf, sptrs=LAPACKE_zsptrs,
+    ppsv=LAPACKE_zppsv, pptrf=LAPACKE_zpptrf, pptrs=LAPACKE_zpptrs,
+    hpsv=LAPACKE_zhpsv, hptrf=LAPACKE_zhptrf, hptrs=LAPACKE_zhptrs,
 }

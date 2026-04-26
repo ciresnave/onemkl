@@ -1143,3 +1143,269 @@ pub fn pttrs_complex<T: ComplexLapackScalar>(
     };
     check_info(info)
 }
+
+// =====================================================================
+// Packed variants
+// =====================================================================
+
+/// Solve `A * X = B` with symmetric `A` stored in packed form. `ap`
+/// has length `n*(n+1)/2`. Works for all four scalar types — the
+/// complex variant is "complex symmetric" (rare; the more common
+/// Hermitian case is [`hpsv`]).
+#[allow(clippy::too_many_arguments)]
+pub fn spsv<T: LapackScalar>(
+    layout: Layout,
+    uplo: UpLo,
+    n: usize,
+    nrhs: usize,
+    ap: &mut [T],
+    ipiv: &mut [i32],
+    b: &mut [T],
+    ldb: usize,
+) -> Result<()> {
+    if ap.len() < n * (n + 1) / 2 {
+        return Err(Error::InvalidArgument(
+            "ap must have at least n*(n+1)/2 entries",
+        ));
+    }
+    if ipiv.len() < n {
+        return Err(Error::InvalidArgument("ipiv must have at least n entries"));
+    }
+    let info = unsafe {
+        T::lapacke_spsv(
+            layout.as_lapack(),
+            uplo.as_char() as core::ffi::c_char,
+            dim_to_mkl_int(n)?,
+            dim_to_mkl_int(nrhs)?,
+            ap.as_mut_ptr(),
+            ipiv.as_mut_ptr(),
+            b.as_mut_ptr(),
+            dim_to_mkl_int(ldb)?,
+        )
+    };
+    check_info(info)
+}
+
+/// Symmetric packed Bunch-Kaufman factorization.
+pub fn sptrf<T: LapackScalar>(
+    layout: Layout,
+    uplo: UpLo,
+    n: usize,
+    ap: &mut [T],
+    ipiv: &mut [i32],
+) -> Result<()> {
+    if ap.len() < n * (n + 1) / 2 {
+        return Err(Error::InvalidArgument(
+            "ap must have at least n*(n+1)/2 entries",
+        ));
+    }
+    if ipiv.len() < n {
+        return Err(Error::InvalidArgument("ipiv must have at least n entries"));
+    }
+    let info = unsafe {
+        T::lapacke_sptrf(
+            layout.as_lapack(),
+            uplo.as_char() as core::ffi::c_char,
+            dim_to_mkl_int(n)?,
+            ap.as_mut_ptr(),
+            ipiv.as_mut_ptr(),
+        )
+    };
+    check_info(info)
+}
+
+/// Solve with the symmetric packed factor produced by [`sptrf`].
+#[allow(clippy::too_many_arguments)]
+pub fn sptrs<T: LapackScalar>(
+    layout: Layout,
+    uplo: UpLo,
+    n: usize,
+    nrhs: usize,
+    ap: &[T],
+    ipiv: &[i32],
+    b: &mut [T],
+    ldb: usize,
+) -> Result<()> {
+    let info = unsafe {
+        T::lapacke_sptrs(
+            layout.as_lapack(),
+            uplo.as_char() as core::ffi::c_char,
+            dim_to_mkl_int(n)?,
+            dim_to_mkl_int(nrhs)?,
+            ap.as_ptr(),
+            ipiv.as_ptr(),
+            b.as_mut_ptr(),
+            dim_to_mkl_int(ldb)?,
+        )
+    };
+    check_info(info)
+}
+
+/// Solve `A * X = B` with symmetric / Hermitian PD `A` stored packed.
+#[allow(clippy::too_many_arguments)]
+pub fn ppsv<T: LapackScalar>(
+    layout: Layout,
+    uplo: UpLo,
+    n: usize,
+    nrhs: usize,
+    ap: &mut [T],
+    b: &mut [T],
+    ldb: usize,
+) -> Result<()> {
+    if ap.len() < n * (n + 1) / 2 {
+        return Err(Error::InvalidArgument(
+            "ap must have at least n*(n+1)/2 entries",
+        ));
+    }
+    let info = unsafe {
+        T::lapacke_ppsv(
+            layout.as_lapack(),
+            uplo.as_char() as core::ffi::c_char,
+            dim_to_mkl_int(n)?,
+            dim_to_mkl_int(nrhs)?,
+            ap.as_mut_ptr(),
+            b.as_mut_ptr(),
+            dim_to_mkl_int(ldb)?,
+        )
+    };
+    check_info(info)
+}
+
+/// PD packed Cholesky factorization.
+pub fn pptrf<T: LapackScalar>(
+    layout: Layout,
+    uplo: UpLo,
+    n: usize,
+    ap: &mut [T],
+) -> Result<()> {
+    if ap.len() < n * (n + 1) / 2 {
+        return Err(Error::InvalidArgument(
+            "ap must have at least n*(n+1)/2 entries",
+        ));
+    }
+    let info = unsafe {
+        T::lapacke_pptrf(
+            layout.as_lapack(),
+            uplo.as_char() as core::ffi::c_char,
+            dim_to_mkl_int(n)?,
+            ap.as_mut_ptr(),
+        )
+    };
+    check_info(info)
+}
+
+/// Solve with the PD packed Cholesky factor produced by [`pptrf`].
+#[allow(clippy::too_many_arguments)]
+pub fn pptrs<T: LapackScalar>(
+    layout: Layout,
+    uplo: UpLo,
+    n: usize,
+    nrhs: usize,
+    ap: &[T],
+    b: &mut [T],
+    ldb: usize,
+) -> Result<()> {
+    let info = unsafe {
+        T::lapacke_pptrs(
+            layout.as_lapack(),
+            uplo.as_char() as core::ffi::c_char,
+            dim_to_mkl_int(n)?,
+            dim_to_mkl_int(nrhs)?,
+            ap.as_ptr(),
+            b.as_mut_ptr(),
+            dim_to_mkl_int(ldb)?,
+        )
+    };
+    check_info(info)
+}
+
+/// Solve `A * X = B` with Hermitian `A` stored in packed form.
+/// Complex-only.
+#[allow(clippy::too_many_arguments)]
+pub fn hpsv<T: ComplexLapackScalar>(
+    layout: Layout,
+    uplo: UpLo,
+    n: usize,
+    nrhs: usize,
+    ap: &mut [T],
+    ipiv: &mut [i32],
+    b: &mut [T],
+    ldb: usize,
+) -> Result<()> {
+    if ap.len() < n * (n + 1) / 2 {
+        return Err(Error::InvalidArgument(
+            "ap must have at least n*(n+1)/2 entries",
+        ));
+    }
+    if ipiv.len() < n {
+        return Err(Error::InvalidArgument("ipiv must have at least n entries"));
+    }
+    let info = unsafe {
+        T::lapacke_hpsv(
+            layout.as_lapack(),
+            uplo.as_char() as core::ffi::c_char,
+            dim_to_mkl_int(n)?,
+            dim_to_mkl_int(nrhs)?,
+            ap.as_mut_ptr(),
+            ipiv.as_mut_ptr(),
+            b.as_mut_ptr(),
+            dim_to_mkl_int(ldb)?,
+        )
+    };
+    check_info(info)
+}
+
+/// Hermitian packed Bunch-Kaufman factorization.
+pub fn hptrf<T: ComplexLapackScalar>(
+    layout: Layout,
+    uplo: UpLo,
+    n: usize,
+    ap: &mut [T],
+    ipiv: &mut [i32],
+) -> Result<()> {
+    if ap.len() < n * (n + 1) / 2 {
+        return Err(Error::InvalidArgument(
+            "ap must have at least n*(n+1)/2 entries",
+        ));
+    }
+    if ipiv.len() < n {
+        return Err(Error::InvalidArgument("ipiv must have at least n entries"));
+    }
+    let info = unsafe {
+        T::lapacke_hptrf(
+            layout.as_lapack(),
+            uplo.as_char() as core::ffi::c_char,
+            dim_to_mkl_int(n)?,
+            ap.as_mut_ptr(),
+            ipiv.as_mut_ptr(),
+        )
+    };
+    check_info(info)
+}
+
+/// Solve with the Hermitian packed factor produced by [`hptrf`].
+#[allow(clippy::too_many_arguments)]
+pub fn hptrs<T: ComplexLapackScalar>(
+    layout: Layout,
+    uplo: UpLo,
+    n: usize,
+    nrhs: usize,
+    ap: &[T],
+    ipiv: &[i32],
+    b: &mut [T],
+    ldb: usize,
+) -> Result<()> {
+    let info = unsafe {
+        T::lapacke_hptrs(
+            layout.as_lapack(),
+            uplo.as_char() as core::ffi::c_char,
+            dim_to_mkl_int(n)?,
+            dim_to_mkl_int(nrhs)?,
+            ap.as_ptr(),
+            ipiv.as_ptr(),
+            b.as_mut_ptr(),
+            dim_to_mkl_int(ldb)?,
+        )
+    };
+    check_info(info)
+}
