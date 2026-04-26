@@ -32,6 +32,7 @@ pub mod matrix;
 pub mod pardiso;
 pub mod rng;
 pub mod scalar;
+pub mod service;
 pub mod sparse;
 pub mod vm;
 
