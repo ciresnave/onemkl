@@ -5,7 +5,7 @@
 use approx::assert_abs_diff_eq;
 use num_complex::{Complex32, Complex64};
 
-use onemkl::fft::{FftPlan, FftPlanOutOfPlace};
+use onemkl::fft::{cce_complex_len, FftPlan, FftPlanOutOfPlace, RealFftPlan};
 
 #[test]
 fn fft_of_delta_is_constant_double() {
@@ -102,6 +102,109 @@ fn out_of_place_round_trip() {
     for (r, o) in restored.iter().zip(&original) {
         assert_abs_diff_eq!(r.re, o.re * n as f64, epsilon = 1e-9);
         assert_abs_diff_eq!(r.im, o.im * n as f64, epsilon = 1e-9);
+    }
+}
+
+#[test]
+fn fft_2d_of_delta_is_constant() {
+    // 2-D FFT of [[1,0,0,0],[0,0,0,0]] (a 2×4 array with one nonzero
+    // at (0,0)) should give all 1s in the output.
+    let mut plan = FftPlan::<f64>::complex_2d(2, 4).unwrap();
+    let mut buf: Vec<Complex64> = vec![Complex64::new(0.0, 0.0); 8];
+    buf[0] = Complex64::new(1.0, 0.0);
+    plan.forward_in_place(&mut buf).unwrap();
+    for x in &buf {
+        assert_abs_diff_eq!(x.re, 1.0, epsilon = 1e-12);
+        assert_abs_diff_eq!(x.im, 0.0, epsilon = 1e-12);
+    }
+}
+
+#[test]
+fn fft_2d_round_trip() {
+    let n0 = 4;
+    let n1 = 6;
+    let n = n0 * n1;
+    let original: Vec<Complex64> = (0..n)
+        .map(|i| Complex64::new((i + 1) as f64 * 0.5, (i as f64) * 0.25))
+        .collect();
+    let mut plan = FftPlan::<f64>::complex_2d(n0, n1).unwrap();
+    let mut buf = original.clone();
+    plan.forward_in_place(&mut buf).unwrap();
+    plan.backward_in_place(&mut buf).unwrap();
+    for (a, b) in buf.iter().zip(&original) {
+        assert_abs_diff_eq!(a.re, b.re * n as f64, epsilon = 1e-9);
+        assert_abs_diff_eq!(a.im, b.im * n as f64, epsilon = 1e-9);
+    }
+}
+
+#[test]
+fn fft_3d_round_trip() {
+    let n = 4 * 4 * 4;
+    let original: Vec<Complex64> = (0..n)
+        .map(|i| Complex64::new(i as f64, (i as f64) * 0.1))
+        .collect();
+    let mut plan = FftPlan::<f64>::complex_3d(4, 4, 4).unwrap();
+    let mut buf = original.clone();
+    plan.forward_in_place(&mut buf).unwrap();
+    plan.backward_in_place(&mut buf).unwrap();
+    for (a, b) in buf.iter().zip(&original) {
+        assert_abs_diff_eq!(a.re, b.re * n as f64, epsilon = 1e-8);
+        assert_abs_diff_eq!(a.im, b.im * n as f64, epsilon = 1e-8);
+    }
+}
+
+#[test]
+fn cce_complex_len_formula() {
+    assert_eq!(cce_complex_len(8), 5);
+    assert_eq!(cce_complex_len(7), 4);
+    assert_eq!(cce_complex_len(1), 1);
+}
+
+#[test]
+fn real_fft_1d_of_delta_is_constant() {
+    // Forward FFT of real [1, 0, ..., 0] gives complex all-1s
+    // (output length = n/2 + 1 in CCE format).
+    let n = 8;
+    let mut plan = RealFftPlan::<f64>::real_1d(n).unwrap();
+    let mut input = vec![0.0_f64; n];
+    input[0] = 1.0;
+    let mut output = vec![Complex64::new(0.0, 0.0); cce_complex_len(n)];
+    plan.forward(&input, &mut output).unwrap();
+    for c in &output {
+        assert_abs_diff_eq!(c.re, 1.0, epsilon = 1e-12);
+        assert_abs_diff_eq!(c.im, 0.0, epsilon = 1e-12);
+    }
+}
+
+#[test]
+fn real_fft_1d_round_trip() {
+    let n = 16;
+    let original: Vec<f64> = (0..n).map(|i| (i as f64).sin()).collect();
+    let mut plan = RealFftPlan::<f64>::real_1d(n).unwrap();
+    let mut spectrum = vec![Complex64::new(0.0, 0.0); cce_complex_len(n)];
+    plan.forward(&original, &mut spectrum).unwrap();
+    let mut restored = vec![0.0_f64; n];
+    plan.backward(&spectrum, &mut restored).unwrap();
+    for (a, b) in restored.iter().zip(&original) {
+        assert_abs_diff_eq!(*a, *b * n as f64, epsilon = 1e-9);
+    }
+}
+
+#[test]
+fn real_fft_2d_round_trip() {
+    let n0 = 8;
+    let n1 = 4;
+    let total = n0 * n1;
+    let original: Vec<f64> = (0..total).map(|i| (i as f64).cos()).collect();
+    let mut plan = RealFftPlan::<f64>::real_2d(n0, n1).unwrap();
+    let cce_len = plan.complex_len();
+    assert_eq!(cce_len, n0 * cce_complex_len(n1));
+    let mut spectrum = vec![Complex64::new(0.0, 0.0); cce_len];
+    plan.forward(&original, &mut spectrum).unwrap();
+    let mut restored = vec![0.0_f64; total];
+    plan.backward(&spectrum, &mut restored).unwrap();
+    for (a, b) in restored.iter().zip(&original) {
+        assert_abs_diff_eq!(*a, *b * total as f64, epsilon = 1e-8);
     }
 }
 
