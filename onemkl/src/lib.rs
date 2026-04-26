@@ -28,6 +28,7 @@ pub mod enums;
 pub mod error;
 pub mod matrix;
 pub mod scalar;
+pub mod vm;
 
 mod util;
 
