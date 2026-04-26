@@ -327,6 +327,28 @@ pub trait RealLapackScalar: LapackScalar + RealScalar {
         vl: *mut Self, ldvl: MKL_INT,
         vr: *mut Self, ldvr: MKL_INT,
     ) -> i32;
+
+    /// `LAPACKE_*syevd` — symmetric eigensolver, divide-and-conquer.
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn lapacke_syevd(
+        layout: c_int, jobz: c_char, uplo: c_char, n: MKL_INT,
+        a: *mut Self, lda: MKL_INT, w: *mut Self,
+    ) -> i32;
+
+    /// `LAPACKE_*syevr` — symmetric eigensolver via RRR (Relatively
+    /// Robust Representations). Can compute a subrange of eigenvalues
+    /// by index (`il..=iu`) or by interval (`[vl, vu]`).
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn lapacke_syevr(
+        layout: c_int, jobz: c_char, range: c_char, uplo: c_char, n: MKL_INT,
+        a: *mut Self, lda: MKL_INT,
+        vl: Self, vu: Self,
+        il: MKL_INT, iu: MKL_INT,
+        abstol: Self,
+        m: *mut MKL_INT, w: *mut Self,
+        z: *mut Self, ldz: MKL_INT,
+        isuppz: *mut MKL_INT,
+    ) -> i32;
 }
 
 /// Complex-only LAPACK operations.
@@ -413,6 +435,26 @@ pub trait ComplexLapackScalar: LapackScalar + ComplexScalar {
         vl: *mut Self, ldvl: MKL_INT,
         vr: *mut Self, ldvr: MKL_INT,
     ) -> i32;
+
+    /// `LAPACKE_*heevd` — Hermitian eigensolver, divide-and-conquer.
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn lapacke_heevd(
+        layout: c_int, jobz: c_char, uplo: c_char, n: MKL_INT,
+        a: *mut Self, lda: MKL_INT, w: *mut Self::Real,
+    ) -> i32;
+
+    /// `LAPACKE_*heevr` — Hermitian eigensolver via RRR.
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn lapacke_heevr(
+        layout: c_int, jobz: c_char, range: c_char, uplo: c_char, n: MKL_INT,
+        a: *mut Self, lda: MKL_INT,
+        vl: Self::Real, vu: Self::Real,
+        il: MKL_INT, iu: MKL_INT,
+        abstol: Self::Real,
+        m: *mut MKL_INT, w: *mut Self::Real,
+        z: *mut Self, ldz: MKL_INT,
+        isuppz: *mut MKL_INT,
+    ) -> i32;
 }
 
 // =====================================================================
@@ -434,6 +476,7 @@ macro_rules! impl_lapack_real {
         spsv=$spsv:ident, sptrf=$sptrf:ident, sptrs=$sptrs:ident,
         ppsv=$ppsv:ident, pptrf=$pptrf:ident, pptrs=$pptrs:ident,
         sygv=$sygv:ident, ggev_real=$ggev_real:ident,
+        syevd=$syevd:ident, syevr=$syevr:ident,
     ) => {
         impl LapackScalar for $ty {
             unsafe fn lapacke_gesv(
@@ -727,6 +770,29 @@ macro_rules! impl_lapack_real {
                     )
                 }
             }
+            unsafe fn lapacke_syevd(
+                layout: c_int, jobz: c_char, uplo: c_char, n: MKL_INT,
+                a: *mut Self, lda: MKL_INT, w: *mut Self,
+            ) -> i32 {
+                unsafe { sys::$syevd(layout, jobz, uplo, n, a, lda, w) }
+            }
+            unsafe fn lapacke_syevr(
+                layout: c_int, jobz: c_char, range: c_char, uplo: c_char, n: MKL_INT,
+                a: *mut Self, lda: MKL_INT,
+                vl: Self, vu: Self,
+                il: MKL_INT, iu: MKL_INT,
+                abstol: Self,
+                m: *mut MKL_INT, w: *mut Self,
+                z: *mut Self, ldz: MKL_INT,
+                isuppz: *mut MKL_INT,
+            ) -> i32 {
+                unsafe {
+                    sys::$syevr(
+                        layout, jobz, range, uplo, n, a, lda, vl, vu, il, iu, abstol,
+                        m, w, z, ldz, isuppz,
+                    )
+                }
+            }
         }
     };
 }
@@ -746,6 +812,7 @@ impl_lapack_real! {
     spsv=LAPACKE_sspsv, sptrf=LAPACKE_ssptrf, sptrs=LAPACKE_ssptrs,
     ppsv=LAPACKE_sppsv, pptrf=LAPACKE_spptrf, pptrs=LAPACKE_spptrs,
     sygv=LAPACKE_ssygv, ggev_real=LAPACKE_sggev,
+    syevd=LAPACKE_ssyevd, syevr=LAPACKE_ssyevr,
 }
 
 impl_lapack_real! {
@@ -763,6 +830,7 @@ impl_lapack_real! {
     spsv=LAPACKE_dspsv, sptrf=LAPACKE_dsptrf, sptrs=LAPACKE_dsptrs,
     ppsv=LAPACKE_dppsv, pptrf=LAPACKE_dpptrf, pptrs=LAPACKE_dpptrs,
     sygv=LAPACKE_dsygv, ggev_real=LAPACKE_dggev,
+    syevd=LAPACKE_dsyevd, syevr=LAPACKE_dsyevr,
 }
 
 macro_rules! impl_lapack_complex {
@@ -781,6 +849,7 @@ macro_rules! impl_lapack_complex {
         ppsv=$ppsv:ident, pptrf=$pptrf:ident, pptrs=$pptrs:ident,
         hpsv=$hpsv:ident, hptrf=$hptrf:ident, hptrs=$hptrs:ident,
         hegv=$hegv:ident, ggev_complex=$ggev_complex:ident,
+        heevd=$heevd:ident, heevr=$heevr:ident,
     ) => {
         impl LapackScalar for $ty {
             unsafe fn lapacke_gesv(
@@ -1140,6 +1209,30 @@ macro_rules! impl_lapack_complex {
                     )
                 }
             }
+            unsafe fn lapacke_heevd(
+                layout: c_int, jobz: c_char, uplo: c_char, n: MKL_INT,
+                a: *mut Self, lda: MKL_INT, w: *mut Self::Real,
+            ) -> i32 {
+                unsafe { sys::$heevd(layout, jobz, uplo, n, a.cast(), lda, w) }
+            }
+            unsafe fn lapacke_heevr(
+                layout: c_int, jobz: c_char, range: c_char, uplo: c_char, n: MKL_INT,
+                a: *mut Self, lda: MKL_INT,
+                vl: Self::Real, vu: Self::Real,
+                il: MKL_INT, iu: MKL_INT,
+                abstol: Self::Real,
+                m: *mut MKL_INT, w: *mut Self::Real,
+                z: *mut Self, ldz: MKL_INT,
+                isuppz: *mut MKL_INT,
+            ) -> i32 {
+                unsafe {
+                    sys::$heevr(
+                        layout, jobz, range, uplo, n, a.cast(), lda,
+                        vl, vu, il, iu, abstol,
+                        m, w, z.cast(), ldz, isuppz,
+                    )
+                }
+            }
         }
     };
 }
@@ -1160,6 +1253,7 @@ impl_lapack_complex! {
     ppsv=LAPACKE_cppsv, pptrf=LAPACKE_cpptrf, pptrs=LAPACKE_cpptrs,
     hpsv=LAPACKE_chpsv, hptrf=LAPACKE_chptrf, hptrs=LAPACKE_chptrs,
     hegv=LAPACKE_chegv, ggev_complex=LAPACKE_cggev,
+    heevd=LAPACKE_cheevd, heevr=LAPACKE_cheevr,
 }
 
 impl_lapack_complex! {
@@ -1178,4 +1272,5 @@ impl_lapack_complex! {
     ppsv=LAPACKE_zppsv, pptrf=LAPACKE_zpptrf, pptrs=LAPACKE_zpptrs,
     hpsv=LAPACKE_zhpsv, hptrf=LAPACKE_zhptrf, hptrs=LAPACKE_zhptrs,
     hegv=LAPACKE_zhegv, ggev_complex=LAPACKE_zggev,
+    heevd=LAPACKE_zheevd, heevr=LAPACKE_zheevr,
 }

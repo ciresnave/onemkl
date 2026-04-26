@@ -1572,6 +1572,256 @@ pub fn ggev_real<T: RealLapackScalar>(
     check_info(info)
 }
 
+/// Range specification for the RRR eigensolvers
+/// ([`syevr`] / [`heevr`]).
+#[derive(Debug, Clone, Copy)]
+pub enum EigenRange<R> {
+    /// Compute all eigenvalues.
+    All,
+    /// Compute eigenvalues in the half-open interval `(vl, vu]`.
+    Values {
+        /// Lower bound (exclusive).
+        vl: R,
+        /// Upper bound (inclusive).
+        vu: R,
+    },
+    /// Compute the `il`-th through `iu`-th eigenvalues, sorted in
+    /// ascending order. Indices are 1-based.
+    Indices {
+        /// 1-based start index.
+        il: i32,
+        /// 1-based end index (inclusive).
+        iu: i32,
+    },
+}
+
+impl<R> EigenRange<R> {
+    fn as_char(&self) -> u8 {
+        match self {
+            Self::All => b'A',
+            Self::Values { .. } => b'V',
+            Self::Indices { .. } => b'I',
+        }
+    }
+}
+
+/// Symmetric eigensolver using divide-and-conquer (`?syevd`). Real-only.
+pub fn syevd<T: RealLapackScalar>(
+    jobz: Job,
+    uplo: UpLo,
+    a: &mut MatrixMut<'_, T>,
+    w: &mut [T],
+) -> Result<()> {
+    let n = ensure_square(a)?;
+    if w.len() < n {
+        return Err(Error::InvalidArgument("w must have at least n entries"));
+    }
+    let info = unsafe {
+        T::lapacke_syevd(
+            a.layout().as_lapack(),
+            jobz.as_char() as core::ffi::c_char,
+            uplo.as_char() as core::ffi::c_char,
+            dim_to_mkl_int(n)?,
+            a.as_mut_ptr(),
+            dim_to_mkl_int(a.leading_dim())?,
+            w.as_mut_ptr(),
+        )
+    };
+    check_info(info)
+}
+
+/// Hermitian eigensolver using divide-and-conquer (`?heevd`).
+/// Complex-only.
+pub fn heevd<T: ComplexLapackScalar>(
+    jobz: Job,
+    uplo: UpLo,
+    a: &mut MatrixMut<'_, T>,
+    w: &mut [T::Real],
+) -> Result<()> {
+    let n = ensure_square(a)?;
+    if w.len() < n {
+        return Err(Error::InvalidArgument("w must have at least n entries"));
+    }
+    let info = unsafe {
+        T::lapacke_heevd(
+            a.layout().as_lapack(),
+            jobz.as_char() as core::ffi::c_char,
+            uplo.as_char() as core::ffi::c_char,
+            dim_to_mkl_int(n)?,
+            a.as_mut_ptr(),
+            dim_to_mkl_int(a.leading_dim())?,
+            w.as_mut_ptr(),
+        )
+    };
+    check_info(info)
+}
+
+/// Output from an RRR eigensolver call. `eigenvalues` and
+/// `eigenvectors` are sized to the actual number of converged
+/// eigenvalues `m`. `isuppz` reports the support indices for each
+/// eigenvector when `jobz == Compute`.
+#[derive(Debug, Clone)]
+pub struct RrrEigResult<T, R> {
+    /// Number of converged eigenvalues.
+    pub m: usize,
+    /// Eigenvalues in ascending order.
+    pub eigenvalues: Vec<R>,
+    /// Eigenvectors, column-major, of shape `n × m`. Empty if
+    /// `jobz == Job::None`.
+    pub eigenvectors: Vec<T>,
+    /// Indices of the first / last non-zero entry of each
+    /// eigenvector. Empty if `jobz == Job::None`.
+    pub isuppz: Vec<i32>,
+}
+
+/// Symmetric eigensolver via RRR (Relatively Robust Representations).
+/// Real-only. Computes the eigenvalues / eigenvectors of `A` in the
+/// requested range; `abstol` is the absolute convergence tolerance
+/// (pass `0.0` to use LAPACK's default).
+#[allow(clippy::too_many_arguments)]
+pub fn syevr<T: RealLapackScalar + Default>(
+    jobz: Job,
+    range: EigenRange<T>,
+    uplo: UpLo,
+    a: &mut MatrixMut<'_, T>,
+    abstol: T,
+) -> Result<RrrEigResult<T, T>> {
+    let n = ensure_square(a)?;
+    let n_i = dim_to_mkl_int(n)?;
+    let lda = dim_to_mkl_int(a.leading_dim())?;
+    let layout = a.layout();
+    let range_char = range.as_char() as core::ffi::c_char;
+    let (vl, vu, il, iu) = match range {
+        EigenRange::All => (T::default(), T::default(), 1_i32, n.max(1) as i32),
+        EigenRange::Values { vl, vu } => (vl, vu, 1_i32, n.max(1) as i32),
+        EigenRange::Indices { il, iu } => (T::default(), T::default(), il, iu),
+    };
+    let il = dim_to_mkl_int(il.max(1) as usize)?;
+    let iu = dim_to_mkl_int(iu.max(1) as usize)?;
+    let want_z = matches!(jobz, Job::Compute);
+    let mut m_out: i32 = 0;
+    let mut w: Vec<T> = vec![T::default(); n.max(1)];
+    let mut z: Vec<T> = if want_z {
+        vec![T::default(); n.max(1) * n.max(1)]
+    } else {
+        Vec::new()
+    };
+    let mut isuppz: Vec<i32> = if want_z {
+        vec![0_i32; 2 * n.max(1)]
+    } else {
+        Vec::new()
+    };
+    let info = unsafe {
+        T::lapacke_syevr(
+            layout.as_lapack(),
+            jobz.as_char() as core::ffi::c_char,
+            range_char,
+            uplo.as_char() as core::ffi::c_char,
+            n_i,
+            a.as_mut_ptr(),
+            lda,
+            vl,
+            vu,
+            il,
+            iu,
+            abstol,
+            &mut m_out,
+            w.as_mut_ptr(),
+            if want_z { z.as_mut_ptr() } else { core::ptr::null_mut() },
+            dim_to_mkl_int(n.max(1))?,
+            if want_z { isuppz.as_mut_ptr() } else { core::ptr::null_mut() },
+        )
+    };
+    check_info(info)?;
+    let m = m_out.max(0) as usize;
+    w.truncate(m);
+    if want_z {
+        z.truncate(n.max(1) * m);
+        isuppz.truncate(2 * m);
+    }
+    Ok(RrrEigResult {
+        m,
+        eigenvalues: w,
+        eigenvectors: z,
+        isuppz,
+    })
+}
+
+/// Hermitian eigensolver via RRR. Complex-only. Eigenvalues are
+/// real (stored in `Self::Real`); eigenvectors are complex.
+#[allow(clippy::too_many_arguments)]
+pub fn heevr<T: ComplexLapackScalar>(
+    jobz: Job,
+    range: EigenRange<T::Real>,
+    uplo: UpLo,
+    a: &mut MatrixMut<'_, T>,
+    abstol: T::Real,
+) -> Result<RrrEigResult<T, T::Real>>
+where
+    T::Real: Default,
+    T: Default,
+{
+    let n = ensure_square(a)?;
+    let n_i = dim_to_mkl_int(n)?;
+    let lda = dim_to_mkl_int(a.leading_dim())?;
+    let layout = a.layout();
+    let range_char = range.as_char() as core::ffi::c_char;
+    let (vl, vu, il, iu) = match range {
+        EigenRange::All => (T::Real::default(), T::Real::default(), 1_i32, n.max(1) as i32),
+        EigenRange::Values { vl, vu } => (vl, vu, 1_i32, n.max(1) as i32),
+        EigenRange::Indices { il, iu } => (T::Real::default(), T::Real::default(), il, iu),
+    };
+    let il = dim_to_mkl_int(il.max(1) as usize)?;
+    let iu = dim_to_mkl_int(iu.max(1) as usize)?;
+    let want_z = matches!(jobz, Job::Compute);
+    let mut m_out: i32 = 0;
+    let mut w: Vec<T::Real> = vec![T::Real::default(); n.max(1)];
+    let mut z: Vec<T> = if want_z {
+        vec![T::default(); n.max(1) * n.max(1)]
+    } else {
+        Vec::new()
+    };
+    let mut isuppz: Vec<i32> = if want_z {
+        vec![0_i32; 2 * n.max(1)]
+    } else {
+        Vec::new()
+    };
+    let info = unsafe {
+        T::lapacke_heevr(
+            layout.as_lapack(),
+            jobz.as_char() as core::ffi::c_char,
+            range_char,
+            uplo.as_char() as core::ffi::c_char,
+            n_i,
+            a.as_mut_ptr(),
+            lda,
+            vl,
+            vu,
+            il,
+            iu,
+            abstol,
+            &mut m_out,
+            w.as_mut_ptr(),
+            if want_z { z.as_mut_ptr() } else { core::ptr::null_mut() },
+            dim_to_mkl_int(n.max(1))?,
+            if want_z { isuppz.as_mut_ptr() } else { core::ptr::null_mut() },
+        )
+    };
+    check_info(info)?;
+    let m = m_out.max(0) as usize;
+    w.truncate(m);
+    if want_z {
+        z.truncate(n.max(1) * m);
+        isuppz.truncate(2 * m);
+    }
+    Ok(RrrEigResult {
+        m,
+        eigenvalues: w,
+        eigenvectors: z,
+        isuppz,
+    })
+}
+
 /// Complex general generalized eigenproblem. Eigenvalues are
 /// returned as `alpha / beta`, both complex.
 #[allow(clippy::too_many_arguments)]
