@@ -32,6 +32,7 @@ pub mod fft;
 pub mod iss;
 pub mod lapack;
 pub mod matrix;
+pub mod optim;
 pub mod pardiso;
 pub mod rng;
 pub mod scalar;
