@@ -761,3 +761,385 @@ fn ensure_layout(layouts: &[Layout]) -> Result<Layout> {
         ))
     }
 }
+
+// =====================================================================
+// Banded variants
+// =====================================================================
+
+/// Solve `A * X = B` with a general banded `A`. `A` is `n × n` with
+/// `kl` sub-diagonals and `ku` super-diagonals, stored in CBLAS-style
+/// band format with leading dimension `ldab ≥ 2*kl + ku + 1`.
+#[allow(clippy::too_many_arguments)]
+pub fn gbsv<T: LapackScalar>(
+    layout: Layout,
+    n: usize,
+    kl: usize,
+    ku: usize,
+    nrhs: usize,
+    ab: &mut [T],
+    ldab: usize,
+    ipiv: &mut [i32],
+    b: &mut [T],
+    ldb: usize,
+) -> Result<()> {
+    if ipiv.len() < n {
+        return Err(Error::InvalidArgument("ipiv must have at least n entries"));
+    }
+    let info = unsafe {
+        T::lapacke_gbsv(
+            layout.as_lapack(),
+            dim_to_mkl_int(n)?,
+            dim_to_mkl_int(kl)?,
+            dim_to_mkl_int(ku)?,
+            dim_to_mkl_int(nrhs)?,
+            ab.as_mut_ptr(),
+            dim_to_mkl_int(ldab)?,
+            ipiv.as_mut_ptr(),
+            b.as_mut_ptr(),
+            dim_to_mkl_int(ldb)?,
+        )
+    };
+    check_info(info)
+}
+
+/// LU factorization of a general banded matrix.
+#[allow(clippy::too_many_arguments)]
+pub fn gbtrf<T: LapackScalar>(
+    layout: Layout,
+    m: usize,
+    n: usize,
+    kl: usize,
+    ku: usize,
+    ab: &mut [T],
+    ldab: usize,
+    ipiv: &mut [i32],
+) -> Result<()> {
+    if ipiv.len() < m.min(n) {
+        return Err(Error::InvalidArgument(
+            "ipiv must have at least min(m, n) entries",
+        ));
+    }
+    let info = unsafe {
+        T::lapacke_gbtrf(
+            layout.as_lapack(),
+            dim_to_mkl_int(m)?,
+            dim_to_mkl_int(n)?,
+            dim_to_mkl_int(kl)?,
+            dim_to_mkl_int(ku)?,
+            ab.as_mut_ptr(),
+            dim_to_mkl_int(ldab)?,
+            ipiv.as_mut_ptr(),
+        )
+    };
+    check_info(info)
+}
+
+/// Solve with the LU factor produced by [`gbtrf`].
+#[allow(clippy::too_many_arguments)]
+pub fn gbtrs<T: LapackScalar>(
+    layout: Layout,
+    trans: Transpose,
+    n: usize,
+    kl: usize,
+    ku: usize,
+    nrhs: usize,
+    ab: &[T],
+    ldab: usize,
+    ipiv: &[i32],
+    b: &mut [T],
+    ldb: usize,
+) -> Result<()> {
+    if ipiv.len() < n {
+        return Err(Error::InvalidArgument("ipiv must have at least n entries"));
+    }
+    let info = unsafe {
+        T::lapacke_gbtrs(
+            layout.as_lapack(),
+            trans.as_char() as core::ffi::c_char,
+            dim_to_mkl_int(n)?,
+            dim_to_mkl_int(kl)?,
+            dim_to_mkl_int(ku)?,
+            dim_to_mkl_int(nrhs)?,
+            ab.as_ptr(),
+            dim_to_mkl_int(ldab)?,
+            ipiv.as_ptr(),
+            b.as_mut_ptr(),
+            dim_to_mkl_int(ldb)?,
+        )
+    };
+    check_info(info)
+}
+
+/// Solve `A * X = B` with a general tridiagonal `A` given by sub-,
+/// main-, and super-diagonals `dl`, `d`, `du`.
+#[allow(clippy::too_many_arguments)]
+pub fn gtsv<T: LapackScalar>(
+    layout: Layout,
+    n: usize,
+    nrhs: usize,
+    dl: &mut [T],
+    d: &mut [T],
+    du: &mut [T],
+    b: &mut [T],
+    ldb: usize,
+) -> Result<()> {
+    if dl.len() < n.saturating_sub(1) || d.len() < n || du.len() < n.saturating_sub(1) {
+        return Err(Error::InvalidArgument(
+            "tridiagonal arrays too short: need |dl|, |du| ≥ n-1, |d| ≥ n",
+        ));
+    }
+    let info = unsafe {
+        T::lapacke_gtsv(
+            layout.as_lapack(),
+            dim_to_mkl_int(n)?,
+            dim_to_mkl_int(nrhs)?,
+            dl.as_mut_ptr(),
+            d.as_mut_ptr(),
+            du.as_mut_ptr(),
+            b.as_mut_ptr(),
+            dim_to_mkl_int(ldb)?,
+        )
+    };
+    check_info(info)
+}
+
+/// LU factorization of a general tridiagonal matrix.
+pub fn gttrf<T: LapackScalar>(
+    n: usize,
+    dl: &mut [T],
+    d: &mut [T],
+    du: &mut [T],
+    du2: &mut [T],
+    ipiv: &mut [i32],
+) -> Result<()> {
+    if du2.len() < n.saturating_sub(2) || ipiv.len() < n {
+        return Err(Error::InvalidArgument(
+            "du2 must have ≥ n-2 entries and ipiv ≥ n entries",
+        ));
+    }
+    let info = unsafe {
+        T::lapacke_gttrf(
+            dim_to_mkl_int(n)?,
+            dl.as_mut_ptr(),
+            d.as_mut_ptr(),
+            du.as_mut_ptr(),
+            du2.as_mut_ptr(),
+            ipiv.as_mut_ptr(),
+        )
+    };
+    check_info(info)
+}
+
+/// Solve with the LU factor produced by [`gttrf`].
+#[allow(clippy::too_many_arguments)]
+pub fn gttrs<T: LapackScalar>(
+    layout: Layout,
+    trans: Transpose,
+    n: usize,
+    nrhs: usize,
+    dl: &[T],
+    d: &[T],
+    du: &[T],
+    du2: &[T],
+    ipiv: &[i32],
+    b: &mut [T],
+    ldb: usize,
+) -> Result<()> {
+    let info = unsafe {
+        T::lapacke_gttrs(
+            layout.as_lapack(),
+            trans.as_char() as core::ffi::c_char,
+            dim_to_mkl_int(n)?,
+            dim_to_mkl_int(nrhs)?,
+            dl.as_ptr(),
+            d.as_ptr(),
+            du.as_ptr(),
+            du2.as_ptr(),
+            ipiv.as_ptr(),
+            b.as_mut_ptr(),
+            dim_to_mkl_int(ldb)?,
+        )
+    };
+    check_info(info)
+}
+
+/// Solve `A * X = B` with symmetric / Hermitian PD banded `A`.
+#[allow(clippy::too_many_arguments)]
+pub fn pbsv<T: LapackScalar>(
+    layout: Layout,
+    uplo: UpLo,
+    n: usize,
+    kd: usize,
+    nrhs: usize,
+    ab: &mut [T],
+    ldab: usize,
+    b: &mut [T],
+    ldb: usize,
+) -> Result<()> {
+    let info = unsafe {
+        T::lapacke_pbsv(
+            layout.as_lapack(),
+            uplo.as_char() as core::ffi::c_char,
+            dim_to_mkl_int(n)?,
+            dim_to_mkl_int(kd)?,
+            dim_to_mkl_int(nrhs)?,
+            ab.as_mut_ptr(),
+            dim_to_mkl_int(ldab)?,
+            b.as_mut_ptr(),
+            dim_to_mkl_int(ldb)?,
+        )
+    };
+    check_info(info)
+}
+
+/// Cholesky factorization of a PD banded matrix.
+pub fn pbtrf<T: LapackScalar>(
+    layout: Layout,
+    uplo: UpLo,
+    n: usize,
+    kd: usize,
+    ab: &mut [T],
+    ldab: usize,
+) -> Result<()> {
+    let info = unsafe {
+        T::lapacke_pbtrf(
+            layout.as_lapack(),
+            uplo.as_char() as core::ffi::c_char,
+            dim_to_mkl_int(n)?,
+            dim_to_mkl_int(kd)?,
+            ab.as_mut_ptr(),
+            dim_to_mkl_int(ldab)?,
+        )
+    };
+    check_info(info)
+}
+
+/// Solve with the Cholesky factor produced by [`pbtrf`].
+#[allow(clippy::too_many_arguments)]
+pub fn pbtrs<T: LapackScalar>(
+    layout: Layout,
+    uplo: UpLo,
+    n: usize,
+    kd: usize,
+    nrhs: usize,
+    ab: &[T],
+    ldab: usize,
+    b: &mut [T],
+    ldb: usize,
+) -> Result<()> {
+    let info = unsafe {
+        T::lapacke_pbtrs(
+            layout.as_lapack(),
+            uplo.as_char() as core::ffi::c_char,
+            dim_to_mkl_int(n)?,
+            dim_to_mkl_int(kd)?,
+            dim_to_mkl_int(nrhs)?,
+            ab.as_ptr(),
+            dim_to_mkl_int(ldab)?,
+            b.as_mut_ptr(),
+            dim_to_mkl_int(ldb)?,
+        )
+    };
+    check_info(info)
+}
+
+/// Solve `A * X = B` with PD tridiagonal `A`. `d` is the real diagonal
+/// (length `n`); `e` is the off-diagonal (length `n - 1`).
+#[allow(clippy::too_many_arguments)]
+pub fn ptsv<T: LapackScalar>(
+    layout: Layout,
+    n: usize,
+    nrhs: usize,
+    d: &mut [T::Real],
+    e: &mut [T],
+    b: &mut [T],
+    ldb: usize,
+) -> Result<()> {
+    if d.len() < n || e.len() < n.saturating_sub(1) {
+        return Err(Error::InvalidArgument(
+            "PD tridiagonal arrays too short: need |d| ≥ n, |e| ≥ n-1",
+        ));
+    }
+    let info = unsafe {
+        T::lapacke_ptsv(
+            layout.as_lapack(),
+            dim_to_mkl_int(n)?,
+            dim_to_mkl_int(nrhs)?,
+            d.as_mut_ptr(),
+            e.as_mut_ptr(),
+            b.as_mut_ptr(),
+            dim_to_mkl_int(ldb)?,
+        )
+    };
+    check_info(info)
+}
+
+/// Cholesky factorization of a PD tridiagonal matrix.
+pub fn pttrf<T: LapackScalar>(
+    n: usize,
+    d: &mut [T::Real],
+    e: &mut [T],
+) -> Result<()> {
+    if d.len() < n || e.len() < n.saturating_sub(1) {
+        return Err(Error::InvalidArgument(
+            "PD tridiagonal arrays too short: need |d| ≥ n, |e| ≥ n-1",
+        ));
+    }
+    let info = unsafe {
+        T::lapacke_pttrf(dim_to_mkl_int(n)?, d.as_mut_ptr(), e.as_mut_ptr())
+    };
+    check_info(info)
+}
+
+/// Solve with the PD-tridiagonal Cholesky factor (real types).
+pub fn pttrs_real<T: RealLapackScalar>(
+    layout: Layout,
+    n: usize,
+    nrhs: usize,
+    d: &[T],
+    e: &[T],
+    b: &mut [T],
+    ldb: usize,
+) -> Result<()> {
+    let info = unsafe {
+        T::lapacke_pttrs(
+            layout.as_lapack(),
+            dim_to_mkl_int(n)?,
+            dim_to_mkl_int(nrhs)?,
+            d.as_ptr(),
+            e.as_ptr(),
+            b.as_mut_ptr(),
+            dim_to_mkl_int(ldb)?,
+        )
+    };
+    check_info(info)
+}
+
+/// Solve with the PD-tridiagonal Cholesky factor (complex types).
+/// Takes `uplo` because the off-diagonal `e` is complex and the
+/// upper / lower convention selects the conjugation.
+#[allow(clippy::too_many_arguments)]
+pub fn pttrs_complex<T: ComplexLapackScalar>(
+    layout: Layout,
+    uplo: UpLo,
+    n: usize,
+    nrhs: usize,
+    d: &[T::Real],
+    e: &[T],
+    b: &mut [T],
+    ldb: usize,
+) -> Result<()> {
+    let info = unsafe {
+        T::lapacke_pttrs_complex(
+            layout.as_lapack(),
+            uplo.as_char() as core::ffi::c_char,
+            dim_to_mkl_int(n)?,
+            dim_to_mkl_int(nrhs)?,
+            d.as_ptr(),
+            e.as_ptr(),
+            b.as_mut_ptr(),
+            dim_to_mkl_int(ldb)?,
+        )
+    };
+    check_info(info)
+}

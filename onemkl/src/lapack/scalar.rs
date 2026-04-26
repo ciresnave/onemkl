@@ -124,6 +124,100 @@ pub trait LapackScalar: Scalar {
         vt: *mut Self, ldvt: MKL_INT,
         superb: *mut Self::Real,
     ) -> i32;
+
+    // ---- Banded ----
+
+    /// `LAPACKE_*gbsv` — general band solve (LU + substitution).
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn lapacke_gbsv(
+        layout: c_int, n: MKL_INT, kl: MKL_INT, ku: MKL_INT, nrhs: MKL_INT,
+        ab: *mut Self, ldab: MKL_INT, ipiv: *mut MKL_INT,
+        b: *mut Self, ldb: MKL_INT,
+    ) -> i32;
+
+    /// `LAPACKE_*gbtrf` — general band LU factorization.
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn lapacke_gbtrf(
+        layout: c_int, m: MKL_INT, n: MKL_INT, kl: MKL_INT, ku: MKL_INT,
+        ab: *mut Self, ldab: MKL_INT, ipiv: *mut MKL_INT,
+    ) -> i32;
+
+    /// `LAPACKE_*gbtrs` — solve with general band LU factor.
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn lapacke_gbtrs(
+        layout: c_int, trans: c_char,
+        n: MKL_INT, kl: MKL_INT, ku: MKL_INT, nrhs: MKL_INT,
+        ab: *const Self, ldab: MKL_INT, ipiv: *const MKL_INT,
+        b: *mut Self, ldb: MKL_INT,
+    ) -> i32;
+
+    /// `LAPACKE_*gtsv` — general tridiagonal solve.
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn lapacke_gtsv(
+        layout: c_int, n: MKL_INT, nrhs: MKL_INT,
+        dl: *mut Self, d: *mut Self, du: *mut Self,
+        b: *mut Self, ldb: MKL_INT,
+    ) -> i32;
+
+    /// `LAPACKE_*gttrf` — general tridiagonal LU factorization. Note
+    /// no `matrix_layout` argument.
+    unsafe fn lapacke_gttrf(
+        n: MKL_INT,
+        dl: *mut Self, d: *mut Self, du: *mut Self, du2: *mut Self,
+        ipiv: *mut MKL_INT,
+    ) -> i32;
+
+    /// `LAPACKE_*gttrs` — solve with general tridiagonal LU factor.
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn lapacke_gttrs(
+        layout: c_int, trans: c_char,
+        n: MKL_INT, nrhs: MKL_INT,
+        dl: *const Self, d: *const Self, du: *const Self, du2: *const Self,
+        ipiv: *const MKL_INT,
+        b: *mut Self, ldb: MKL_INT,
+    ) -> i32;
+
+    /// `LAPACKE_*pbsv` — symmetric / Hermitian positive-definite band
+    /// solve (Cholesky).
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn lapacke_pbsv(
+        layout: c_int, uplo: c_char,
+        n: MKL_INT, kd: MKL_INT, nrhs: MKL_INT,
+        ab: *mut Self, ldab: MKL_INT,
+        b: *mut Self, ldb: MKL_INT,
+    ) -> i32;
+
+    /// `LAPACKE_*pbtrf` — PD band Cholesky factorization.
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn lapacke_pbtrf(
+        layout: c_int, uplo: c_char,
+        n: MKL_INT, kd: MKL_INT,
+        ab: *mut Self, ldab: MKL_INT,
+    ) -> i32;
+
+    /// `LAPACKE_*pbtrs` — solve with PD band Cholesky factor.
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn lapacke_pbtrs(
+        layout: c_int, uplo: c_char,
+        n: MKL_INT, kd: MKL_INT, nrhs: MKL_INT,
+        ab: *const Self, ldab: MKL_INT,
+        b: *mut Self, ldb: MKL_INT,
+    ) -> i32;
+
+    /// `LAPACKE_*ptsv` — PD tridiagonal solve.
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn lapacke_ptsv(
+        layout: c_int, n: MKL_INT, nrhs: MKL_INT,
+        d: *mut Self::Real, e: *mut Self,
+        b: *mut Self, ldb: MKL_INT,
+    ) -> i32;
+
+    /// `LAPACKE_*pttrf` — PD tridiagonal Cholesky factorization. Note
+    /// no `matrix_layout` argument.
+    unsafe fn lapacke_pttrf(
+        n: MKL_INT,
+        d: *mut Self::Real, e: *mut Self,
+    ) -> i32;
 }
 
 /// Real-only LAPACK operations.
@@ -152,6 +246,15 @@ pub trait RealLapackScalar: LapackScalar + RealScalar {
         wr: *mut Self, wi: *mut Self,
         vl: *mut Self, ldvl: MKL_INT,
         vr: *mut Self, ldvr: MKL_INT,
+    ) -> i32;
+
+    /// `LAPACKE_*pttrs` (real) — solve with PD tridiagonal Cholesky
+    /// factor. No uplo because the matrix is symmetric.
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn lapacke_pttrs(
+        layout: c_int, n: MKL_INT, nrhs: MKL_INT,
+        d: *const Self, e: *const Self,
+        b: *mut Self, ldb: MKL_INT,
     ) -> i32;
 }
 
@@ -182,6 +285,16 @@ pub trait ComplexLapackScalar: LapackScalar + ComplexScalar {
         vl: *mut Self, ldvl: MKL_INT,
         vr: *mut Self, ldvr: MKL_INT,
     ) -> i32;
+
+    /// `LAPACKE_*pttrs` (complex) — solve with PD tridiagonal Cholesky
+    /// factor. Takes uplo because the off-diagonal `e` is complex.
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn lapacke_pttrs_complex(
+        layout: c_int, uplo: c_char,
+        n: MKL_INT, nrhs: MKL_INT,
+        d: *const Self::Real, e: *const Self,
+        b: *mut Self, ldb: MKL_INT,
+    ) -> i32;
 }
 
 // =====================================================================
@@ -196,6 +309,10 @@ macro_rules! impl_lapack_real {
         gels=$gels:ident, gelsd=$gelsd:ident,
         gesdd=$gesdd:ident, gesvd=$gesvd:ident,
         sysv=$sysv:ident, syev=$syev:ident, geev=$geev:ident,
+        gbsv=$gbsv:ident, gbtrf=$gbtrf:ident, gbtrs=$gbtrs:ident,
+        gtsv=$gtsv:ident, gttrf=$gttrf:ident, gttrs=$gttrs:ident,
+        pbsv=$pbsv:ident, pbtrf=$pbtrf:ident, pbtrs=$pbtrs:ident,
+        ptsv=$ptsv:ident, pttrf=$pttrf:ident, pttrs=$pttrs:ident,
     ) => {
         impl LapackScalar for $ty {
             unsafe fn lapacke_gesv(
@@ -304,9 +421,100 @@ macro_rules! impl_lapack_real {
                     )
                 }
             }
+            unsafe fn lapacke_gbsv(
+                layout: c_int, n: MKL_INT, kl: MKL_INT, ku: MKL_INT, nrhs: MKL_INT,
+                ab: *mut Self, ldab: MKL_INT, ipiv: *mut MKL_INT,
+                b: *mut Self, ldb: MKL_INT,
+            ) -> i32 {
+                unsafe { sys::$gbsv(layout, n, kl, ku, nrhs, ab, ldab, ipiv, b, ldb) }
+            }
+            unsafe fn lapacke_gbtrf(
+                layout: c_int, m: MKL_INT, n: MKL_INT, kl: MKL_INT, ku: MKL_INT,
+                ab: *mut Self, ldab: MKL_INT, ipiv: *mut MKL_INT,
+            ) -> i32 {
+                unsafe { sys::$gbtrf(layout, m, n, kl, ku, ab, ldab, ipiv) }
+            }
+            unsafe fn lapacke_gbtrs(
+                layout: c_int, trans: c_char,
+                n: MKL_INT, kl: MKL_INT, ku: MKL_INT, nrhs: MKL_INT,
+                ab: *const Self, ldab: MKL_INT, ipiv: *const MKL_INT,
+                b: *mut Self, ldb: MKL_INT,
+            ) -> i32 {
+                unsafe {
+                    sys::$gbtrs(layout, trans, n, kl, ku, nrhs, ab, ldab, ipiv, b, ldb)
+                }
+            }
+            unsafe fn lapacke_gtsv(
+                layout: c_int, n: MKL_INT, nrhs: MKL_INT,
+                dl: *mut Self, d: *mut Self, du: *mut Self,
+                b: *mut Self, ldb: MKL_INT,
+            ) -> i32 {
+                unsafe { sys::$gtsv(layout, n, nrhs, dl, d, du, b, ldb) }
+            }
+            unsafe fn lapacke_gttrf(
+                n: MKL_INT,
+                dl: *mut Self, d: *mut Self, du: *mut Self, du2: *mut Self,
+                ipiv: *mut MKL_INT,
+            ) -> i32 {
+                unsafe { sys::$gttrf(n, dl, d, du, du2, ipiv) }
+            }
+            unsafe fn lapacke_gttrs(
+                layout: c_int, trans: c_char,
+                n: MKL_INT, nrhs: MKL_INT,
+                dl: *const Self, d: *const Self, du: *const Self, du2: *const Self,
+                ipiv: *const MKL_INT,
+                b: *mut Self, ldb: MKL_INT,
+            ) -> i32 {
+                unsafe {
+                    sys::$gttrs(layout, trans, n, nrhs, dl, d, du, du2, ipiv, b, ldb)
+                }
+            }
+            unsafe fn lapacke_pbsv(
+                layout: c_int, uplo: c_char,
+                n: MKL_INT, kd: MKL_INT, nrhs: MKL_INT,
+                ab: *mut Self, ldab: MKL_INT,
+                b: *mut Self, ldb: MKL_INT,
+            ) -> i32 {
+                unsafe { sys::$pbsv(layout, uplo, n, kd, nrhs, ab, ldab, b, ldb) }
+            }
+            unsafe fn lapacke_pbtrf(
+                layout: c_int, uplo: c_char,
+                n: MKL_INT, kd: MKL_INT,
+                ab: *mut Self, ldab: MKL_INT,
+            ) -> i32 {
+                unsafe { sys::$pbtrf(layout, uplo, n, kd, ab, ldab) }
+            }
+            unsafe fn lapacke_pbtrs(
+                layout: c_int, uplo: c_char,
+                n: MKL_INT, kd: MKL_INT, nrhs: MKL_INT,
+                ab: *const Self, ldab: MKL_INT,
+                b: *mut Self, ldb: MKL_INT,
+            ) -> i32 {
+                unsafe { sys::$pbtrs(layout, uplo, n, kd, nrhs, ab, ldab, b, ldb) }
+            }
+            unsafe fn lapacke_ptsv(
+                layout: c_int, n: MKL_INT, nrhs: MKL_INT,
+                d: *mut Self::Real, e: *mut Self,
+                b: *mut Self, ldb: MKL_INT,
+            ) -> i32 {
+                unsafe { sys::$ptsv(layout, n, nrhs, d, e, b, ldb) }
+            }
+            unsafe fn lapacke_pttrf(
+                n: MKL_INT,
+                d: *mut Self::Real, e: *mut Self,
+            ) -> i32 {
+                unsafe { sys::$pttrf(n, d, e) }
+            }
         }
 
         impl RealLapackScalar for $ty {
+            unsafe fn lapacke_pttrs(
+                layout: c_int, n: MKL_INT, nrhs: MKL_INT,
+                d: *const Self, e: *const Self,
+                b: *mut Self, ldb: MKL_INT,
+            ) -> i32 {
+                unsafe { sys::$pttrs(layout, n, nrhs, d, e, b, ldb) }
+            }
             unsafe fn lapacke_sysv(
                 layout: c_int, uplo: c_char, n: MKL_INT, nrhs: MKL_INT,
                 a: *mut Self, lda: MKL_INT, ipiv: *mut MKL_INT,
@@ -345,6 +553,10 @@ impl_lapack_real! {
     gels=LAPACKE_sgels, gelsd=LAPACKE_sgelsd,
     gesdd=LAPACKE_sgesdd, gesvd=LAPACKE_sgesvd,
     sysv=LAPACKE_ssysv, syev=LAPACKE_ssyev, geev=LAPACKE_sgeev,
+    gbsv=LAPACKE_sgbsv, gbtrf=LAPACKE_sgbtrf, gbtrs=LAPACKE_sgbtrs,
+    gtsv=LAPACKE_sgtsv, gttrf=LAPACKE_sgttrf, gttrs=LAPACKE_sgttrs,
+    pbsv=LAPACKE_spbsv, pbtrf=LAPACKE_spbtrf, pbtrs=LAPACKE_spbtrs,
+    ptsv=LAPACKE_sptsv, pttrf=LAPACKE_spttrf, pttrs=LAPACKE_spttrs,
 }
 
 impl_lapack_real! {
@@ -355,6 +567,10 @@ impl_lapack_real! {
     gels=LAPACKE_dgels, gelsd=LAPACKE_dgelsd,
     gesdd=LAPACKE_dgesdd, gesvd=LAPACKE_dgesvd,
     sysv=LAPACKE_dsysv, syev=LAPACKE_dsyev, geev=LAPACKE_dgeev,
+    gbsv=LAPACKE_dgbsv, gbtrf=LAPACKE_dgbtrf, gbtrs=LAPACKE_dgbtrs,
+    gtsv=LAPACKE_dgtsv, gttrf=LAPACKE_dgttrf, gttrs=LAPACKE_dgttrs,
+    pbsv=LAPACKE_dpbsv, pbtrf=LAPACKE_dpbtrf, pbtrs=LAPACKE_dpbtrs,
+    ptsv=LAPACKE_dptsv, pttrf=LAPACKE_dpttrf, pttrs=LAPACKE_dpttrs,
 }
 
 macro_rules! impl_lapack_complex {
@@ -365,6 +581,10 @@ macro_rules! impl_lapack_complex {
         gels=$gels:ident, gelsd=$gelsd:ident,
         gesdd=$gesdd:ident, gesvd=$gesvd:ident,
         hesv=$hesv:ident, heev=$heev:ident, geev=$geev:ident,
+        gbsv=$gbsv:ident, gbtrf=$gbtrf:ident, gbtrs=$gbtrs:ident,
+        gtsv=$gtsv:ident, gttrf=$gttrf:ident, gttrs=$gttrs:ident,
+        pbsv=$pbsv:ident, pbtrf=$pbtrf:ident, pbtrs=$pbtrs:ident,
+        ptsv=$ptsv:ident, pttrf=$pttrf:ident, pttrs=$pttrs:ident,
     ) => {
         impl LapackScalar for $ty {
             unsafe fn lapacke_gesv(
@@ -478,9 +698,121 @@ macro_rules! impl_lapack_complex {
                     )
                 }
             }
+            unsafe fn lapacke_gbsv(
+                layout: c_int, n: MKL_INT, kl: MKL_INT, ku: MKL_INT, nrhs: MKL_INT,
+                ab: *mut Self, ldab: MKL_INT, ipiv: *mut MKL_INT,
+                b: *mut Self, ldb: MKL_INT,
+            ) -> i32 {
+                unsafe {
+                    sys::$gbsv(
+                        layout, n, kl, ku, nrhs, ab.cast(), ldab, ipiv, b.cast(), ldb,
+                    )
+                }
+            }
+            unsafe fn lapacke_gbtrf(
+                layout: c_int, m: MKL_INT, n: MKL_INT, kl: MKL_INT, ku: MKL_INT,
+                ab: *mut Self, ldab: MKL_INT, ipiv: *mut MKL_INT,
+            ) -> i32 {
+                unsafe { sys::$gbtrf(layout, m, n, kl, ku, ab.cast(), ldab, ipiv) }
+            }
+            unsafe fn lapacke_gbtrs(
+                layout: c_int, trans: c_char,
+                n: MKL_INT, kl: MKL_INT, ku: MKL_INT, nrhs: MKL_INT,
+                ab: *const Self, ldab: MKL_INT, ipiv: *const MKL_INT,
+                b: *mut Self, ldb: MKL_INT,
+            ) -> i32 {
+                unsafe {
+                    sys::$gbtrs(
+                        layout, trans, n, kl, ku, nrhs, ab.cast(), ldab, ipiv, b.cast(), ldb,
+                    )
+                }
+            }
+            unsafe fn lapacke_gtsv(
+                layout: c_int, n: MKL_INT, nrhs: MKL_INT,
+                dl: *mut Self, d: *mut Self, du: *mut Self,
+                b: *mut Self, ldb: MKL_INT,
+            ) -> i32 {
+                unsafe {
+                    sys::$gtsv(layout, n, nrhs, dl.cast(), d.cast(), du.cast(), b.cast(), ldb)
+                }
+            }
+            unsafe fn lapacke_gttrf(
+                n: MKL_INT,
+                dl: *mut Self, d: *mut Self, du: *mut Self, du2: *mut Self,
+                ipiv: *mut MKL_INT,
+            ) -> i32 {
+                unsafe {
+                    sys::$gttrf(n, dl.cast(), d.cast(), du.cast(), du2.cast(), ipiv)
+                }
+            }
+            unsafe fn lapacke_gttrs(
+                layout: c_int, trans: c_char,
+                n: MKL_INT, nrhs: MKL_INT,
+                dl: *const Self, d: *const Self, du: *const Self, du2: *const Self,
+                ipiv: *const MKL_INT,
+                b: *mut Self, ldb: MKL_INT,
+            ) -> i32 {
+                unsafe {
+                    sys::$gttrs(
+                        layout, trans, n, nrhs,
+                        dl.cast(), d.cast(), du.cast(), du2.cast(), ipiv,
+                        b.cast(), ldb,
+                    )
+                }
+            }
+            unsafe fn lapacke_pbsv(
+                layout: c_int, uplo: c_char,
+                n: MKL_INT, kd: MKL_INT, nrhs: MKL_INT,
+                ab: *mut Self, ldab: MKL_INT,
+                b: *mut Self, ldb: MKL_INT,
+            ) -> i32 {
+                unsafe {
+                    sys::$pbsv(layout, uplo, n, kd, nrhs, ab.cast(), ldab, b.cast(), ldb)
+                }
+            }
+            unsafe fn lapacke_pbtrf(
+                layout: c_int, uplo: c_char,
+                n: MKL_INT, kd: MKL_INT,
+                ab: *mut Self, ldab: MKL_INT,
+            ) -> i32 {
+                unsafe { sys::$pbtrf(layout, uplo, n, kd, ab.cast(), ldab) }
+            }
+            unsafe fn lapacke_pbtrs(
+                layout: c_int, uplo: c_char,
+                n: MKL_INT, kd: MKL_INT, nrhs: MKL_INT,
+                ab: *const Self, ldab: MKL_INT,
+                b: *mut Self, ldb: MKL_INT,
+            ) -> i32 {
+                unsafe {
+                    sys::$pbtrs(layout, uplo, n, kd, nrhs, ab.cast(), ldab, b.cast(), ldb)
+                }
+            }
+            unsafe fn lapacke_ptsv(
+                layout: c_int, n: MKL_INT, nrhs: MKL_INT,
+                d: *mut Self::Real, e: *mut Self,
+                b: *mut Self, ldb: MKL_INT,
+            ) -> i32 {
+                unsafe { sys::$ptsv(layout, n, nrhs, d, e.cast(), b.cast(), ldb) }
+            }
+            unsafe fn lapacke_pttrf(
+                n: MKL_INT,
+                d: *mut Self::Real, e: *mut Self,
+            ) -> i32 {
+                unsafe { sys::$pttrf(n, d, e.cast()) }
+            }
         }
 
         impl ComplexLapackScalar for $ty {
+            unsafe fn lapacke_pttrs_complex(
+                layout: c_int, uplo: c_char,
+                n: MKL_INT, nrhs: MKL_INT,
+                d: *const Self::Real, e: *const Self,
+                b: *mut Self, ldb: MKL_INT,
+            ) -> i32 {
+                unsafe {
+                    sys::$pttrs(layout, uplo, n, nrhs, d, e.cast(), b.cast(), ldb)
+                }
+            }
             unsafe fn lapacke_hesv(
                 layout: c_int, uplo: c_char, n: MKL_INT, nrhs: MKL_INT,
                 a: *mut Self, lda: MKL_INT, ipiv: *mut MKL_INT,
@@ -520,6 +852,10 @@ impl_lapack_complex! {
     gels=LAPACKE_cgels, gelsd=LAPACKE_cgelsd,
     gesdd=LAPACKE_cgesdd, gesvd=LAPACKE_cgesvd,
     hesv=LAPACKE_chesv, heev=LAPACKE_cheev, geev=LAPACKE_cgeev,
+    gbsv=LAPACKE_cgbsv, gbtrf=LAPACKE_cgbtrf, gbtrs=LAPACKE_cgbtrs,
+    gtsv=LAPACKE_cgtsv, gttrf=LAPACKE_cgttrf, gttrs=LAPACKE_cgttrs,
+    pbsv=LAPACKE_cpbsv, pbtrf=LAPACKE_cpbtrf, pbtrs=LAPACKE_cpbtrs,
+    ptsv=LAPACKE_cptsv, pttrf=LAPACKE_cpttrf, pttrs=LAPACKE_cpttrs,
 }
 
 impl_lapack_complex! {
@@ -530,4 +866,8 @@ impl_lapack_complex! {
     gels=LAPACKE_zgels, gelsd=LAPACKE_zgelsd,
     gesdd=LAPACKE_zgesdd, gesvd=LAPACKE_zgesvd,
     hesv=LAPACKE_zhesv, heev=LAPACKE_zheev, geev=LAPACKE_zgeev,
+    gbsv=LAPACKE_zgbsv, gbtrf=LAPACKE_zgbtrf, gbtrs=LAPACKE_zgbtrs,
+    gtsv=LAPACKE_zgtsv, gttrf=LAPACKE_zgttrf, gttrs=LAPACKE_zgttrs,
+    pbsv=LAPACKE_zpbsv, pbtrf=LAPACKE_zpbtrf, pbtrs=LAPACKE_zpbtrs,
+    ptsv=LAPACKE_zptsv, pttrf=LAPACKE_zpttrf, pttrs=LAPACKE_zpttrs,
 }
