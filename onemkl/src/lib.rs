@@ -27,6 +27,7 @@ pub mod blas;
 pub mod data_fitting;
 pub mod enums;
 pub mod error;
+pub mod feast;
 pub mod fft;
 pub mod lapack;
 pub mod matrix;
