@@ -29,6 +29,7 @@ pub mod enums;
 pub mod error;
 pub mod feast;
 pub mod fft;
+pub mod iss;
 pub mod lapack;
 pub mod matrix;
 pub mod pardiso;
