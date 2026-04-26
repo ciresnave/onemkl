@@ -10,23 +10,37 @@ to Rust:
 
 ## Status
 
-| Domain                         | `onemkl-sys` | `onemkl`              |
-| ------------------------------ | ------------ | --------------------- |
-| BLAS L1 / L2 / L3              | ✅           | L1 ✅ • L2 partial • L3 partial |
-| BLAS-like extensions           | ✅           | —                     |
-| LAPACK                         | ✅           | —                     |
-| Sparse BLAS (legacy + IE)      | ✅           | —                     |
-| Sparse QR                      | ✅           | —                     |
-| PARDISO / DSS / RCI ISS        | ✅           | —                     |
-| Extended Eigensolver (FEAST)   | ✅           | —                     |
-| Vector Math (VM)               | ✅           | —                     |
-| RNG / Statistics (VSL)         | ✅           | —                     |
-| FFT (DFTI)                     | ✅           | —                     |
-| PDE (Trig transforms, Poisson) | ✅           | —                     |
-| Nonlinear optimization         | ✅           | —                     |
-| Data fitting                   | ✅           | —                     |
-| Service / utility              | ✅           | —                     |
+| Domain | `onemkl-sys` | `onemkl` |
+| --- | --- | --- |
+| BLAS L1 / L2 / L3 | ✅ | ✅ |
+| BLAS-like extensions (`axpby`, `?matcopy`, `?matadd`) | ✅ | ✅ |
+| BLAS batched (strided) gemm/trsm/gemv/dgmm/axpy/copy | ✅ | ✅ |
+| LAPACK linear solve, QR, LS, eigenvalue, SVD | ✅ | ✅ |
+| LAPACK utility / banded / packed / generalized eig | ✅ | partial |
+| Sparse BLAS Inspector-Executor (CSR mv/mm/trsv) | ✅ | ✅ |
+| Sparse QR | ✅ | ✅ |
+| PARDISO direct sparse solver | ✅ | ✅ |
+| DSS direct sparse solver | ✅ | ✅ |
+| RCI ISS (CG, FGMRES) iterative solvers | ✅ | ✅ |
+| ILU0 / ILUT preconditioners | ✅ | ✅ |
+| Extended Eigensolver (FEAST) — dense | ✅ | ✅ |
+| Vector Math (VM) — element-wise unary/binary | ✅ | ✅ |
+| Random Number Generators (VSL RNG) | ✅ | ✅ |
+| FFT (DFTI) — 1-D complex | ✅ | ✅ |
+| Data fitting — natural cubic spline | ✅ | ✅ |
+| Nonlinear optimization — TRNLS, Jacobi | ✅ | ✅ |
+| Service routines (version, threading, memory) | ✅ | ✅ |
+| FFT — multi-dimensional, real-input variants | ✅ | — |
+| PDE (trig transforms, Poisson) | ✅ | — |
+| Compact BLAS / LAPACK | ✅ | — |
+| Mixed-precision GEMMs (bf16/fp16/fp8) and JIT | ✅ | — |
+| FEAST CSR / banded / generalized variants | ✅ | — |
 | ScaLAPACK / Cluster FFT / BLACS / PBLAS / Cluster PARDISO | opt-in feature | — |
+
+The `onemkl` modules cover the most commonly used parts of each
+domain. Anything not yet wrapped is reachable through `onemkl::sys`
+(the raw `onemkl-sys` re-export); contributions adding higher-level
+wrappers for the remaining items are welcome.
 
 ## Requirements
 
@@ -45,8 +59,8 @@ cargo test --workspace
 
 If the build can't find your MKL install, set `MKLROOT`:
 
-```bash
-# Windows (PowerShell)
+```powershell
+# Windows
 $env:MKLROOT = "C:\Program Files (x86)\Intel\oneAPI\mkl\latest"
 
 # Linux / macOS
@@ -57,11 +71,11 @@ export MKLROOT=/opt/intel/oneapi/mkl/latest
 
 Selected on the `onemkl-sys` crate (and re-exported through `onemkl`):
 
-| Group        | Features                                                                            |
-| ------------ | ----------------------------------------------------------------------------------- |
-| Interface    | `lp64` (default) • `ilp64`                                                           |
-| Threading    | `threading-sequential` (default) • `threading-intel-openmp` • `threading-tbb`        |
-| Linkage      | `link-dynamic` (default) • `link-static`                                             |
+| Group | Features |
+| --- | --- |
+| Interface | `lp64` (default), `ilp64` |
+| Threading | `threading-sequential` (default), `threading-intel-openmp`, `threading-tbb` |
+| Linkage | `link-dynamic` (default), `link-static` |
 
 Opt-in MPI-dependent domains (off by default; require an MPI runtime):
 `cluster-sparse-solver`, `cdft`, `scalapack`, `blacs`, `pblas`.
