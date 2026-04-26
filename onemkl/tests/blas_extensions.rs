@@ -1,3 +1,5 @@
+#![cfg(feature = "blas")]
+
 //! Verify the BLAS-like extension wrappers against hand-computed values.
 
 use approx::assert_abs_diff_eq;

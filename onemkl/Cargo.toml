@@ -13,7 +13,31 @@ description = "Safe, idiomatic Rust wrapper over Intel oneAPI Math Kernel Librar
 readme = "README.md"
 
 [features]
-default = ["lp64", "threading-sequential", "link-dynamic"]
+# Default = the standard build-config trio, plus every per-domain feature.
+# Users who want a minimal build can `default-features = false` and select
+# exactly the domains and config they need.
+default = [
+    # Build configuration (one from each group must be selected).
+    "lp64",
+    "threading-sequential",
+    "link-dynamic",
+    # Per-domain wrappers.
+    "blas",
+    "data-fitting",
+    "dss",
+    "feast",
+    "fft",
+    "iss",
+    "lapack",
+    "optim",
+    "pardiso",
+    "preconditioners",
+    "rng",
+    "sparse",
+    "vm",
+]
+
+# --- Build configuration (re-exported from onemkl-sys) ---
 lp64 = ["onemkl-sys/lp64"]
 ilp64 = ["onemkl-sys/ilp64"]
 threading-sequential = ["onemkl-sys/threading-sequential"]
@@ -21,6 +45,23 @@ threading-intel-openmp = ["onemkl-sys/threading-intel-openmp"]
 threading-tbb = ["onemkl-sys/threading-tbb"]
 link-dynamic = ["onemkl-sys/link-dynamic"]
 link-static = ["onemkl-sys/link-static"]
+
+# --- Per-domain features ---
+# Enables the matching `pub mod` in `lib.rs`. Foundation modules
+# (`error`, `enums`, `matrix`, `scalar`, `service`) are always built.
+blas = []
+data-fitting = []
+dss = []
+feast = []
+fft = []
+iss = []
+lapack = []
+optim = []
+pardiso = []
+preconditioners = []
+rng = []
+sparse = []
+vm = []
 
 [dependencies]
 onemkl-sys = { workspace = true }

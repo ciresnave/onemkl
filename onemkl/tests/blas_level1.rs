@@ -1,3 +1,5 @@
+#![cfg(feature = "blas")]
+
 //! Verify BLAS Level 1 wrappers against hand-computed values.
 
 use approx::assert_abs_diff_eq;

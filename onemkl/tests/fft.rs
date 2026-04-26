@@ -1,3 +1,5 @@
+#![cfg(feature = "fft")]
+
 //! Verify FFT wrappers via known DFT values and round-tripping.
 
 use approx::assert_abs_diff_eq;

@@ -1,3 +1,5 @@
+#![cfg(feature = "blas")]
+
 //! Verify the expanded BLAS Level 3 surface against hand-computed values.
 
 use approx::assert_abs_diff_eq;

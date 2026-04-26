@@ -1,3 +1,5 @@
+#![cfg(feature = "pardiso")]
+
 //! Verify PARDISO direct sparse solver wrappers.
 
 use approx::assert_abs_diff_eq;

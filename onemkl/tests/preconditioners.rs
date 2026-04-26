@@ -1,3 +1,5 @@
+#![cfg(feature = "preconditioners")]
+
 //! Verify ILU0 / ILUT preconditioners.
 
 use approx::assert_abs_diff_eq;

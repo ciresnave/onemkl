@@ -1,3 +1,5 @@
+#![cfg(feature = "vm")]
+
 //! Verify Vector Math (VM) wrappers against std math reference values.
 
 use approx::assert_abs_diff_eq;

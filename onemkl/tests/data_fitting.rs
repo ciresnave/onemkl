@@ -1,3 +1,5 @@
+#![cfg(feature = "data-fitting")]
+
 //! Verify cubic spline interpolation and integration.
 
 use approx::assert_abs_diff_eq;

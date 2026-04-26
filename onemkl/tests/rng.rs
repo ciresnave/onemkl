@@ -1,3 +1,5 @@
+#![cfg(feature = "rng")]
+
 //! Verify VSL RNG wrappers via statistical sanity checks.
 
 use approx::assert_abs_diff_eq;

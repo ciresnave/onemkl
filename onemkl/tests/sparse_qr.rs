@@ -1,3 +1,5 @@
+#![cfg(feature = "sparse")]
+
 //! Verify Sparse QR factorization + solve.
 
 use approx::assert_abs_diff_eq;

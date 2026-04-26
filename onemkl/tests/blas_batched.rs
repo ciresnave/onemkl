@@ -1,3 +1,5 @@
+#![cfg(feature = "blas")]
+
 //! Verify the batched (`*_batch_strided`) BLAS-like extension wrappers.
 //!
 //! Each test runs a batch of independent operations and checks the

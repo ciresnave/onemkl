@@ -1,3 +1,5 @@
+#![cfg(feature = "optim")]
+
 //! Verify trust-region NLLS solvers with closure callbacks.
 
 use approx::assert_abs_diff_eq;

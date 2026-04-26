@@ -8,39 +8,7 @@ to Rust:
 - **[`onemkl`](onemkl/)** — safe, idiomatic Rust API built on top of
   `onemkl-sys`.
 
-## Status
-
-| Domain | `onemkl-sys` | `onemkl` |
-| --- | --- | --- |
-| BLAS L1 / L2 / L3 | ✅ | ✅ |
-| BLAS-like extensions (`axpby`, `?matcopy`, `?matadd`) | ✅ | ✅ |
-| BLAS batched (strided) gemm/trsm/gemv/dgmm/axpy/copy | ✅ | ✅ |
-| LAPACK linear solve, QR, LS, eigenvalue, SVD | ✅ | ✅ |
-| LAPACK utility / banded / packed / generalized eig | ✅ | partial |
-| Sparse BLAS Inspector-Executor (CSR mv/mm/trsv) | ✅ | ✅ |
-| Sparse QR | ✅ | ✅ |
-| PARDISO direct sparse solver | ✅ | ✅ |
-| DSS direct sparse solver | ✅ | ✅ |
-| RCI ISS (CG, FGMRES) iterative solvers | ✅ | ✅ |
-| ILU0 / ILUT preconditioners | ✅ | ✅ |
-| Extended Eigensolver (FEAST) — dense | ✅ | ✅ |
-| Vector Math (VM) — element-wise unary/binary | ✅ | ✅ |
-| Random Number Generators (VSL RNG) | ✅ | ✅ |
-| FFT (DFTI) — 1-D complex | ✅ | ✅ |
-| Data fitting — natural cubic spline | ✅ | ✅ |
-| Nonlinear optimization — TRNLS, Jacobi | ✅ | ✅ |
-| Service routines (version, threading, memory) | ✅ | ✅ |
-| FFT — multi-dimensional, real-input variants | ✅ | — |
-| PDE (trig transforms, Poisson) | ✅ | — |
-| Compact BLAS / LAPACK | ✅ | — |
-| Mixed-precision GEMMs (bf16/fp16/fp8) and JIT | ✅ | — |
-| FEAST CSR / banded / generalized variants | ✅ | — |
-| ScaLAPACK / Cluster FFT / BLACS / PBLAS / Cluster PARDISO | opt-in feature | — |
-
-The `onemkl` modules cover the most commonly used parts of each
-domain. Anything not yet wrapped is reachable through `onemkl::sys`
-(the raw `onemkl-sys` re-export); contributions adding higher-level
-wrappers for the remaining items are welcome.
+For current coverage and what's planned, see [`ROADMAP.md`](ROADMAP.md).
 
 ## Requirements
 
@@ -69,7 +37,9 @@ export MKLROOT=/opt/intel/oneapi/mkl/latest
 
 ## Feature flags
 
-Selected on the `onemkl-sys` crate (and re-exported through `onemkl`):
+### Build configuration (`onemkl-sys` and `onemkl`)
+
+Exactly one feature must be selected from each of:
 
 | Group | Features |
 | --- | --- |
@@ -77,7 +47,42 @@ Selected on the `onemkl-sys` crate (and re-exported through `onemkl`):
 | Threading | `threading-sequential` (default), `threading-intel-openmp`, `threading-tbb` |
 | Linkage | `link-dynamic` (default), `link-static` |
 
-Opt-in MPI-dependent domains (off by default; require an MPI runtime):
+### Per-domain (`onemkl`)
+
+Each oneMKL domain has its own feature, all enabled by default. Foundation
+modules (`error`, `enums`, `matrix`, `scalar`, `service`) are always built.
+
+| Feature | Module |
+| --- | --- |
+| `blas` | `onemkl::blas` |
+| `data-fitting` | `onemkl::data_fitting` |
+| `dss` | `onemkl::dss` |
+| `feast` | `onemkl::feast` |
+| `fft` | `onemkl::fft` |
+| `iss` | `onemkl::iss` |
+| `lapack` | `onemkl::lapack` |
+| `optim` | `onemkl::optim` |
+| `pardiso` | `onemkl::pardiso` |
+| `preconditioners` | `onemkl::preconditioners` |
+| `rng` | `onemkl::rng` |
+| `sparse` | `onemkl::sparse` |
+| `vm` | `onemkl::vm` |
+
+For a minimal build pulling in only BLAS and LAPACK:
+
+```toml
+[dependencies.onemkl]
+version = "..."
+default-features = false
+features = [
+    "lp64", "threading-sequential", "link-dynamic",
+    "blas", "lapack",
+]
+```
+
+### Opt-in MPI domains (`onemkl-sys`)
+
+Off by default; require an MPI runtime:
 `cluster-sparse-solver`, `cdft`, `scalapack`, `blacs`, `pblas`.
 
 ## License

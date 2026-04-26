@@ -1,3 +1,5 @@
+#![cfg(feature = "sparse")]
+
 //! Verify the Inspector-Executor Sparse BLAS wrappers.
 
 use approx::assert_abs_diff_eq;

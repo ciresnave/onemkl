@@ -1,3 +1,5 @@
+#![cfg(feature = "feast")]
+
 //! Verify FEAST extended eigensolver wrappers.
 
 use approx::assert_abs_diff_eq;

@@ -1,3 +1,5 @@
+#![cfg(feature = "iss")]
+
 //! Verify CG and FGMRES iterative solvers.
 
 use approx::assert_abs_diff_eq;

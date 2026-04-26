@@ -1,3 +1,5 @@
+#![cfg(feature = "dss")]
+
 //! Verify DSS direct sparse solver wrappers.
 
 use approx::assert_abs_diff_eq;

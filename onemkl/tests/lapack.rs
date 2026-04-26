@@ -1,3 +1,5 @@
+#![cfg(feature = "lapack")]
+
 //! Verify LAPACK wrappers against hand-computed reference values.
 
 use approx::assert_abs_diff_eq;
