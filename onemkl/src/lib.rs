@@ -31,6 +31,7 @@ pub mod lapack;
 pub mod matrix;
 pub mod rng;
 pub mod scalar;
+pub mod sparse;
 pub mod vm;
 
 mod util;
