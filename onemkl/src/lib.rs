@@ -34,6 +34,7 @@ pub mod lapack;
 pub mod matrix;
 pub mod optim;
 pub mod pardiso;
+pub mod preconditioners;
 pub mod rng;
 pub mod scalar;
 pub mod service;
