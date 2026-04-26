@@ -1,0 +1,354 @@
+//! Intel oneMKL PARDISO direct sparse solver.
+//!
+//! PARDISO solves `A * X = B` for symmetric, structurally symmetric, or
+//! general sparse `A`, with real or complex coefficients. The solver
+//! works in three phases — analysis, numerical factorization, and
+//! solve — which can be invoked independently and reused across many
+//! right-hand sides.
+//!
+//! The Rust API exposes a [`Pardiso`] handle that owns the internal
+//! state array and tears it down on `Drop`. CSR input is taken in
+//! 1-based form by default (oneMKL's convention; set
+//! [`PardisoBuilder::indexing`] to switch).
+//!
+//! ```no_run
+//! use onemkl::pardiso::{Pardiso, PardisoMatrixType, IndexBase};
+//!
+//! // Real symmetric positive-definite 3x3 stored in upper-triangular
+//! // CSR (one-indexed):
+//! let ia = vec![1_i32, 4, 6, 7];
+//! let ja = vec![1_i32, 2, 3, 2, 3, 3];
+//! let a = vec![4.0_f64, -1.0, 0.0, 4.0, -1.0, 4.0];
+//! let mut solver = Pardiso::<f64>::new(PardisoMatrixType::RealSpd)
+//!     .with_indexing(IndexBase::One);
+//! let b = vec![1.0_f64, 2.0, 3.0];
+//! let mut x = vec![0.0_f64; 3];
+//! solver.solve(3, &a, &ia, &ja, &b, &mut x).unwrap();
+//! ```
+
+use core::ffi::c_int;
+use core::marker::PhantomData;
+use core::ptr;
+
+use num_complex::{Complex32, Complex64};
+use onemkl_sys as sys;
+
+use crate::error::{Error, Result};
+
+/// PARDISO matrix type (`mtype` parameter).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum PardisoMatrixType {
+    /// Real, structurally symmetric (mtype = 1).
+    RealStructSym,
+    /// Real, symmetric, positive-definite (mtype = 2).
+    RealSpd,
+    /// Real, symmetric, indefinite (mtype = -2).
+    RealSymIndefinite,
+    /// Complex, structurally symmetric (mtype = 3).
+    ComplexStructSym,
+    /// Complex, Hermitian, positive-definite (mtype = 4).
+    ComplexHpd,
+    /// Complex, Hermitian, indefinite (mtype = -4).
+    ComplexHermIndefinite,
+    /// Complex, symmetric (mtype = 6).
+    ComplexSym,
+    /// Real, unsymmetric (mtype = 11).
+    RealUnsym,
+    /// Complex, unsymmetric (mtype = 13).
+    ComplexUnsym,
+}
+
+impl PardisoMatrixType {
+    #[inline]
+    fn as_int(self) -> i32 {
+        match self {
+            Self::RealStructSym => 1,
+            Self::RealSpd => 2,
+            Self::RealSymIndefinite => -2,
+            Self::ComplexStructSym => 3,
+            Self::ComplexHpd => 4,
+            Self::ComplexHermIndefinite => -4,
+            Self::ComplexSym => 6,
+            Self::RealUnsym => 11,
+            Self::ComplexUnsym => 13,
+        }
+    }
+}
+
+/// Index base for the input CSR row pointer / column index arrays.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum IndexBase {
+    /// 0-based (set `iparm[34] = 1` internally).
+    Zero,
+    /// 1-based (PARDISO default).
+    #[default]
+    One,
+}
+
+/// Trait constraining `T` to be a scalar PARDISO can handle. PARDISO
+/// dispatches via the `mtype` parameter rather than per-type entry
+/// points, but we still gate construction on the scalar type to catch
+/// trivial mismatches at compile time.
+pub trait PardisoScalar: Copy + 'static {
+    /// `true` for complex scalar types — used to forbid pairing a real
+    /// `mtype` with a complex `T` and vice versa.
+    const IS_COMPLEX: bool;
+}
+impl PardisoScalar for f32 {
+    const IS_COMPLEX: bool = false;
+}
+impl PardisoScalar for f64 {
+    const IS_COMPLEX: bool = false;
+}
+impl PardisoScalar for Complex32 {
+    const IS_COMPLEX: bool = true;
+}
+impl PardisoScalar for Complex64 {
+    const IS_COMPLEX: bool = true;
+}
+
+/// Convenience builder that delays construction of the internal state
+/// until the first solve so the user can tweak `indexing` and message
+/// level.
+#[derive(Debug)]
+pub struct Pardiso<T> {
+    pt: [*mut core::ffi::c_void; 64],
+    iparm: [c_int; 64],
+    mtype: c_int,
+    msglvl: c_int,
+    indexing: IndexBase,
+    initialized: bool,
+    factorized: bool,
+    factorized_n: c_int,
+    _marker: PhantomData<T>,
+}
+
+unsafe impl<T> Send for Pardiso<T> {}
+
+impl<T: PardisoScalar> Pardiso<T> {
+    /// Build a new solver for the given matrix type. Initializes
+    /// `iparm` with PARDISO's defaults via `pardisoinit`.
+    #[must_use]
+    pub fn new(mtype: PardisoMatrixType) -> Self {
+        let mtype_is_complex = matches!(
+            mtype,
+            PardisoMatrixType::ComplexStructSym
+                | PardisoMatrixType::ComplexHpd
+                | PardisoMatrixType::ComplexHermIndefinite
+                | PardisoMatrixType::ComplexSym
+                | PardisoMatrixType::ComplexUnsym
+        );
+        assert_eq!(
+            mtype_is_complex,
+            T::IS_COMPLEX,
+            "scalar type and matrix type disagree on real-vs-complex",
+        );
+
+        let mut pt: [*mut core::ffi::c_void; 64] = [ptr::null_mut(); 64];
+        let mut iparm: [c_int; 64] = [0; 64];
+        let mtype_int = mtype.as_int();
+
+        unsafe {
+            sys::pardisoinit(
+                pt.as_mut_ptr() as sys::_MKL_DSS_HANDLE_t,
+                &mtype_int,
+                iparm.as_mut_ptr(),
+            );
+        }
+
+        Self {
+            pt,
+            iparm,
+            mtype: mtype_int,
+            msglvl: 0,
+            indexing: IndexBase::One,
+            initialized: true,
+            factorized: false,
+            factorized_n: 0,
+            _marker: PhantomData,
+        }
+    }
+
+    /// Set the index base for input arrays. `iparm[34]` is updated
+    /// accordingly when execution starts.
+    #[must_use]
+    pub fn with_indexing(mut self, indexing: IndexBase) -> Self {
+        self.indexing = indexing;
+        self
+    }
+
+    /// Set the verbosity level (`msglvl` argument). `0` is silent
+    /// (default), `1` prints statistics to stdout.
+    #[must_use]
+    pub fn with_message_level(mut self, level: i32) -> Self {
+        self.msglvl = level;
+        self
+    }
+
+    /// Borrow the `iparm` array — see the oneMKL PARDISO reference for
+    /// the meaning of each entry.
+    #[inline]
+    pub fn iparm(&mut self) -> &mut [c_int; 64] {
+        &mut self.iparm
+    }
+
+    /// Run the analysis (phase 11) followed by numerical factorization
+    /// (phase 22). After this call, [`solve`](Self::solve) can be
+    /// called repeatedly with different right-hand sides.
+    pub fn analyze_and_factorize(
+        &mut self,
+        n: usize,
+        a: &[T],
+        ia: &[i32],
+        ja: &[i32],
+    ) -> Result<()> {
+        self.run_phase(12, n, a, ia, ja, 0, &[], &mut [])
+    }
+
+    /// Solve `A * X = B`, returning `X` in `x`. If the matrix has not
+    /// been factorized yet, runs phases 11+22+33; otherwise just phase
+    /// 33 with the cached factorization. To force re-factorization of a
+    /// new matrix, call [`reset`](Self::reset) first.
+    pub fn solve(
+        &mut self,
+        n: usize,
+        a: &[T],
+        ia: &[i32],
+        ja: &[i32],
+        b: &[T],
+        x: &mut [T],
+    ) -> Result<()> {
+        let nrhs = (b.len() / n).max(1);
+        let phase = if self.factorized && self.factorized_n as usize == n {
+            33
+        } else {
+            13
+        };
+        self.run_phase(phase, n, a, ia, ja, nrhs as i32, b, x)
+    }
+
+    /// Solve with multiple right-hand sides simultaneously. `b` and
+    /// `x` are interpreted as `n × nrhs` column-major matrices.
+    pub fn solve_multi(
+        &mut self,
+        n: usize,
+        nrhs: i32,
+        a: &[T],
+        ia: &[i32],
+        ja: &[i32],
+        b: &[T],
+        x: &mut [T],
+    ) -> Result<()> {
+        let phase = if self.factorized && self.factorized_n as usize == n {
+            33
+        } else {
+            13
+        };
+        self.run_phase(phase, n, a, ia, ja, nrhs, b, x)
+    }
+
+    /// Free the internal numerical factorization (phase 0) but keep
+    /// the analysis. Useful when reusing the symbolic structure with
+    /// new numerical values.
+    pub fn release_factorization(&mut self) -> Result<()> {
+        // Empty arrays — phase 0 only inspects pt and iparm.
+        let dummy_a: [T; 0] = [];
+        let dummy_i: [i32; 0] = [];
+        self.run_phase(0, 0, &dummy_a, &dummy_i, &dummy_i, 0, &[], &mut [])?;
+        self.factorized = false;
+        Ok(())
+    }
+
+    /// Free everything (phase -1). After this, the solver must be
+    /// rebuilt with [`Pardiso::new`].
+    pub fn reset(&mut self) -> Result<()> {
+        let dummy_a: [T; 0] = [];
+        let dummy_i: [i32; 0] = [];
+        self.run_phase(-1, 0, &dummy_a, &dummy_i, &dummy_i, 0, &[], &mut [])?;
+        self.initialized = false;
+        self.factorized = false;
+        Ok(())
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn run_phase(
+        &mut self,
+        phase: i32,
+        n: usize,
+        a: &[T],
+        ia: &[i32],
+        ja: &[i32],
+        nrhs: i32,
+        b: &[T],
+        x: &mut [T],
+    ) -> Result<()> {
+        let n_i32: c_int = n.try_into().map_err(|_| Error::DimensionOverflow)?;
+        let phase_c = phase;
+        let maxfct: c_int = 1;
+        let mnum: c_int = 1;
+        let mut error: c_int = 0;
+        // 0 → Fortran/1-based; 1 → C/0-based.
+        self.iparm[34] = match self.indexing {
+            IndexBase::One => 0,
+            IndexBase::Zero => 1,
+        };
+        let mtype = self.mtype;
+
+        unsafe {
+            sys::pardiso(
+                self.pt.as_mut_ptr() as sys::_MKL_DSS_HANDLE_t,
+                &maxfct,
+                &mnum,
+                &mtype,
+                &phase_c,
+                &n_i32,
+                a.as_ptr().cast(),
+                ia.as_ptr(),
+                ja.as_ptr(),
+                ptr::null_mut(),
+                &nrhs,
+                self.iparm.as_mut_ptr(),
+                &self.msglvl,
+                b.as_ptr() as *mut core::ffi::c_void,
+                x.as_mut_ptr().cast(),
+                &mut error,
+            );
+        }
+
+        if error != 0 {
+            return Err(Error::PardisoStatus(error));
+        }
+        if phase == 22 || phase == 12 || phase == 13 {
+            self.factorized = true;
+            self.factorized_n = n_i32;
+        }
+        Ok(())
+    }
+}
+
+impl<T> Drop for Pardiso<T> {
+    fn drop(&mut self) {
+        if !self.initialized {
+            return;
+        }
+        // Best-effort cleanup; ignore any error here.
+        let phase: c_int = -1;
+        let maxfct: c_int = 1;
+        let mnum: c_int = 1;
+        let n: c_int = 0;
+        let nrhs: c_int = 0;
+        let msglvl: c_int = 0;
+        let mut error: c_int = 0;
+        unsafe {
+            sys::pardiso(
+                self.pt.as_mut_ptr() as sys::_MKL_DSS_HANDLE_t,
+                &maxfct, &mnum, &self.mtype, &phase, &n,
+                ptr::null(), ptr::null(), ptr::null(),
+                ptr::null_mut(), &nrhs,
+                self.iparm.as_mut_ptr(), &msglvl,
+                ptr::null_mut(), ptr::null_mut(),
+                &mut error,
+            );
+        }
+    }
+}

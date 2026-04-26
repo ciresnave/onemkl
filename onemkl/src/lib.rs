@@ -29,6 +29,7 @@ pub mod error;
 pub mod fft;
 pub mod lapack;
 pub mod matrix;
+pub mod pardiso;
 pub mod rng;
 pub mod scalar;
 pub mod sparse;
