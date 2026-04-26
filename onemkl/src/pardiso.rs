@@ -29,6 +29,8 @@
 use core::ffi::c_int;
 use core::marker::PhantomData;
 use core::ptr;
+use std::ffi::CString;
+use std::path::Path;
 
 use num_complex::{Complex32, Complex64};
 use onemkl_sys as sys;
@@ -259,6 +261,118 @@ impl<T: PardisoScalar> Pardiso<T> {
         Ok(())
     }
 
+    /// Enable diagonal extraction. Sets `iparm[55] = 1` so that
+    /// [`get_diagonal`](Self::get_diagonal) is valid after the
+    /// subsequent factorization. Must be called before
+    /// [`analyze_and_factorize`](Self::analyze_and_factorize) or the
+    /// first [`solve`](Self::solve).
+    #[must_use]
+    pub fn with_diagonal_enabled(mut self) -> Self {
+        self.iparm[55] = 1;
+        self
+    }
+
+    /// Diagonal of the factorized matrix.
+    ///
+    /// Returns `(df, da)` where `df` is the diagonal of the `D` factor
+    /// and `da` is the diagonal of the input matrix `A`. Wraps
+    /// `pardiso_getdiag`. Requires both:
+    ///   - [`with_diagonal_enabled`](Self::with_diagonal_enabled)
+    ///     before factorization, and
+    ///   - the matrix has been factorized.
+    pub fn get_diagonal(&mut self, n: usize) -> Result<(Vec<T>, Vec<T>)>
+    where
+        T: Default,
+    {
+        if !self.factorized {
+            return Err(Error::InvalidArgument(
+                "matrix must be factorized before get_diagonal",
+            ));
+        }
+        if self.iparm[55] != 1 {
+            return Err(Error::InvalidArgument(
+                "with_diagonal_enabled must be called before factorization",
+            ));
+        }
+        let mut df: Vec<T> = (0..n).map(|_| T::default()).collect();
+        let mut da: Vec<T> = (0..n).map(|_| T::default()).collect();
+        let mnum: c_int = 1;
+        let mut error: c_int = 0;
+        unsafe {
+            sys::pardiso_getdiag(
+                self.pt.as_mut_ptr() as sys::_MKL_DSS_HANDLE_t,
+                df.as_mut_ptr().cast(),
+                da.as_mut_ptr().cast(),
+                &mnum,
+                &mut error,
+            );
+        }
+        if error != 0 {
+            return Err(Error::PardisoStatus(error));
+        }
+        Ok((df, da))
+    }
+
+    /// Persist the in-memory factorization to disk under `dir`. The
+    /// directory must exist; PARDISO writes files named after the
+    /// matrix number (`mnum`) into it. Restore with
+    /// [`load_handle`](Self::load_handle). Wraps `pardiso_handle_store`.
+    pub fn save_handle<P: AsRef<Path>>(&mut self, dir: P) -> Result<()> {
+        let dir_c = path_to_cstring(dir.as_ref())?;
+        let mut error: c_int = 0;
+        unsafe {
+            sys::pardiso_handle_store(
+                self.pt.as_mut_ptr() as sys::_MKL_DSS_HANDLE_t,
+                dir_c.as_ptr(),
+                &mut error,
+            );
+        }
+        if error != 0 {
+            return Err(Error::PardisoStatus(error));
+        }
+        Ok(())
+    }
+
+    /// Restore a previously saved factorization into the current
+    /// handle. The current handle's settings (matrix type, indexing)
+    /// must match those used when [`save_handle`](Self::save_handle)
+    /// was called. Wraps `pardiso_handle_restore`.
+    pub fn load_handle<P: AsRef<Path>>(&mut self, dir: P) -> Result<()> {
+        let dir_c = path_to_cstring(dir.as_ref())?;
+        let mut error: c_int = 0;
+        unsafe {
+            sys::pardiso_handle_restore(
+                self.pt.as_mut_ptr() as sys::_MKL_DSS_HANDLE_t,
+                dir_c.as_ptr(),
+                &mut error,
+            );
+        }
+        if error != 0 {
+            return Err(Error::PardisoStatus(error));
+        }
+        // We don't know n until the user solves, but the handle is now
+        // valid for solve calls. Mark it factorized — the user is
+        // expected to pass the same n they saved with.
+        self.factorized = true;
+        Ok(())
+    }
+
+    /// Delete the on-disk files written by
+    /// [`save_handle`](Self::save_handle) under `dir`. Free function;
+    /// does not need a live `Pardiso` instance. Wraps
+    /// `pardiso_handle_delete`.
+    pub fn delete_handle_files<P: AsRef<Path>>(dir: P) -> Result<()> {
+        let dir_c = path_to_cstring(dir.as_ref())?;
+        let mut error: c_int = 0;
+        unsafe {
+            sys::pardiso_handle_delete(dir_c.as_ptr(), &mut error);
+        }
+        if error != 0 {
+            return Err(Error::PardisoStatus(error));
+        }
+        Ok(())
+    }
+
     /// Free everything (phase -1). After this, the solver must be
     /// rebuilt with [`Pardiso::new`].
     pub fn reset(&mut self) -> Result<()> {
@@ -324,6 +438,13 @@ impl<T: PardisoScalar> Pardiso<T> {
         }
         Ok(())
     }
+}
+
+fn path_to_cstring(p: &Path) -> Result<CString> {
+    let s = p
+        .to_str()
+        .ok_or(Error::InvalidArgument("path is not valid UTF-8"))?;
+    CString::new(s).map_err(|_| Error::InvalidArgument("path contains a null byte"))
 }
 
 impl<T> Drop for Pardiso<T> {

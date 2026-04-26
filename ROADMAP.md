@@ -31,7 +31,7 @@ function(s).
 | BLAS-like extensions | MVP | `axpby`, `imatcopy`/`omatcopy`/`omatcopy2`/`omatadd`, batched (strided) `gemm`/`trsm`/`gemv`/`dgmm`/`axpy`/`copy`/`gemm3m` |
 | LAPACK | Common | Linear solve, QR, LS, eigenvalue (incl. RRR + D&C), SVD, banded, packed, generalized |
 | Sparse BLAS (IE) | MVP+ | CSR / COO / CSC / BSR construction; `mv`/`mm`/`trsv`/`optimize` + Sparse QR factor / solve |
-| PARDISO | MVP | Factor + solve, multi-RHS, cached factorization |
+| PARDISO | MVP+ | Factor + solve, multi-RHS, cached factorization, diagonal extraction, save/restore handle |
 | DSS | MVP | Symmetric SPD solve, multi-RHS |
 | ISS (CG, FGMRES) | MVP | Closure-driven mat-vec; preconditioned CG |
 | Preconditioners | MVP | ILU0, ILUT |
@@ -64,8 +64,10 @@ Move every domain currently at MVP up to Common. Specifically:
   `from_csc` / `from_bsr` constructors); `mkl_sparse_copy`,
   `mkl_sparse_convert_*`, `mkl_sparse_order`; the analysis-stage hint
   setters (`mkl_sparse_set_mv_hint`, etc.).
-- **PARDISO**: `pardiso_64`, `mkl_pardiso_pivot`, `pardiso_getdiag`,
-  `pardiso_export`, save/restore handle pair.
+- **PARDISO**: ~~`pardiso_getdiag`, save/restore handle pair~~ (done —
+  `with_diagonal_enabled` / `get_diagonal`, `save_handle` /
+  `load_handle` / `delete_handle_files`); `pardiso_64`,
+  `mkl_pardiso_pivot`, `pardiso_export`.
 - **DSS**: complex matrices, statistics readout, generalized symmetric
   options.
 - **ISS**: full RCI surface for users who want to drive their own

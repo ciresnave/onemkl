@@ -137,3 +137,66 @@ fn analyze_then_solve() {
     solver.solve(3, &a, &ia, &ja, &b, &mut x).unwrap();
     assert_abs_diff_eq!(x[0], 1.0, epsilon = 1e-10);
 }
+
+#[test]
+fn get_diagonal_returns_da_match() {
+    // SPD diag(1, 2, 3) — the diagonal of A is [1, 2, 3].
+    let ia = vec![1_i32, 2, 3, 4];
+    let ja = vec![1_i32, 2, 3];
+    let a = vec![1.0_f64, 2.0, 3.0];
+
+    let mut solver = Pardiso::<f64>::new(PardisoMatrixType::RealSpd)
+        .with_indexing(IndexBase::One)
+        .with_diagonal_enabled();
+    solver.analyze_and_factorize(3, &a, &ia, &ja).unwrap();
+
+    let (df, da) = solver.get_diagonal(3).unwrap();
+    assert_eq!(df.len(), 3);
+    assert_eq!(da.len(), 3);
+    // Diagonal of A.
+    assert_abs_diff_eq!(da[0], 1.0, epsilon = 1e-10);
+    assert_abs_diff_eq!(da[1], 2.0, epsilon = 1e-10);
+    assert_abs_diff_eq!(da[2], 3.0, epsilon = 1e-10);
+    // For SPD with no permutation, df is the diagonal of D in LDLᵀ —
+    // for a diagonal matrix D = A, so df should equal A's diagonal.
+    assert_abs_diff_eq!(df[0], 1.0, epsilon = 1e-10);
+    assert_abs_diff_eq!(df[1], 2.0, epsilon = 1e-10);
+    assert_abs_diff_eq!(df[2], 3.0, epsilon = 1e-10);
+}
+
+#[test]
+fn get_diagonal_before_factorize_errors() {
+    let mut solver = Pardiso::<f64>::new(PardisoMatrixType::RealSpd);
+    assert!(solver.get_diagonal(3).is_err());
+}
+
+#[test]
+fn save_then_restore_handle_roundtrips() {
+    let dir = tempfile::tempdir().unwrap();
+    let dir_path = dir.path();
+
+    // Factorize once and save.
+    let ia = vec![1_i32, 3, 5, 6];
+    let ja = vec![1_i32, 2, 2, 3, 3];
+    let a = vec![4.0_f64, -1.0, 4.0, -1.0, 4.0];
+    {
+        let mut solver = Pardiso::<f64>::new(PardisoMatrixType::RealSpd)
+            .with_indexing(IndexBase::One);
+        solver.analyze_and_factorize(3, &a, &ia, &ja).unwrap();
+        solver.save_handle(dir_path).unwrap();
+    }
+
+    // Load into a fresh solver and solve.
+    let mut solver2 = Pardiso::<f64>::new(PardisoMatrixType::RealSpd)
+        .with_indexing(IndexBase::One);
+    solver2.load_handle(dir_path).unwrap();
+    let b = vec![3.0_f64, 2.0, 3.0];
+    let mut x = vec![0.0_f64; 3];
+    solver2.solve(3, &a, &ia, &ja, &b, &mut x).unwrap();
+    assert_abs_diff_eq!(x[0], 1.0, epsilon = 1e-10);
+    assert_abs_diff_eq!(x[1], 1.0, epsilon = 1e-10);
+    assert_abs_diff_eq!(x[2], 1.0, epsilon = 1e-10);
+
+    // Clean up the disk artifacts.
+    Pardiso::<f64>::delete_handle_files(dir_path).unwrap();
+}
