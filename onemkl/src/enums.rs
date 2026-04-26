@@ -38,6 +38,17 @@ impl Layout {
             Self::ColMajor => b'C',
         }
     }
+
+    /// LAPACKE matrix-layout code. Returns `LAPACK_ROW_MAJOR` (101) or
+    /// `LAPACK_COL_MAJOR` (102) as a [`core::ffi::c_int`].
+    #[inline]
+    #[must_use]
+    pub const fn as_lapack(self) -> core::ffi::c_int {
+        match self {
+            Self::RowMajor => 101,
+            Self::ColMajor => 102,
+        }
+    }
 }
 
 impl Default for Layout {
@@ -106,6 +117,17 @@ impl UpLo {
         match self {
             Self::Upper => sys::CBLAS_UPLO::CblasUpper,
             Self::Lower => sys::CBLAS_UPLO::CblasLower,
+        }
+    }
+
+    /// One-character representation: `U` or `L`. Used by `LAPACKE_*`
+    /// routines.
+    #[inline]
+    #[must_use]
+    pub const fn as_char(self) -> u8 {
+        match self {
+            Self::Upper => b'U',
+            Self::Lower => b'L',
         }
     }
 }

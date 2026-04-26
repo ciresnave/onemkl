@@ -26,6 +26,7 @@ pub use onemkl_sys as sys;
 pub mod blas;
 pub mod enums;
 pub mod error;
+pub mod lapack;
 pub mod matrix;
 pub mod scalar;
 pub mod vm;
