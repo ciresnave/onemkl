@@ -24,6 +24,7 @@
 pub use onemkl_sys as sys;
 
 pub mod blas;
+pub mod data_fitting;
 pub mod enums;
 pub mod error;
 pub mod fft;
