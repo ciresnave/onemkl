@@ -484,6 +484,124 @@ pub trait BlasScalar: Scalar {
         c: *mut Self,
         ldc: usize,
     );
+
+    // ----- Batched (strided) extensions -----
+    //
+    // Each `*_batch_strided` routine performs `batch_size` independent
+    // operations on contiguous slices of one buffer per operand, with a
+    // user-specified element-stride between slices.
+
+    /// `cblas_*axpy_batch_strided` — batched [`cblas_axpy`](Self::cblas_axpy).
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn cblas_axpy_batch_strided(
+        n: MKL_INT,
+        alpha: Self,
+        x: *const Self,
+        incx: MKL_INT,
+        stridex: MKL_INT,
+        y: *mut Self,
+        incy: MKL_INT,
+        stridey: MKL_INT,
+        batch_size: MKL_INT,
+    );
+
+    /// `cblas_*copy_batch_strided` — batched [`cblas_copy`](Self::cblas_copy).
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn cblas_copy_batch_strided(
+        n: MKL_INT,
+        x: *const Self,
+        incx: MKL_INT,
+        stridex: MKL_INT,
+        y: *mut Self,
+        incy: MKL_INT,
+        stridey: MKL_INT,
+        batch_size: MKL_INT,
+    );
+
+    /// `cblas_*gemv_batch_strided` — batched [`cblas_gemv`](Self::cblas_gemv).
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn cblas_gemv_batch_strided(
+        layout: sys::CBLAS_LAYOUT::Type,
+        trans: sys::CBLAS_TRANSPOSE::Type,
+        m: MKL_INT,
+        n: MKL_INT,
+        alpha: Self,
+        a: *const Self,
+        lda: MKL_INT,
+        stridea: MKL_INT,
+        x: *const Self,
+        incx: MKL_INT,
+        stridex: MKL_INT,
+        beta: Self,
+        y: *mut Self,
+        incy: MKL_INT,
+        stridey: MKL_INT,
+        batch_size: MKL_INT,
+    );
+
+    /// `cblas_*gemm_batch_strided` — batched [`cblas_gemm`](Self::cblas_gemm).
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn cblas_gemm_batch_strided(
+        layout: sys::CBLAS_LAYOUT::Type,
+        transa: sys::CBLAS_TRANSPOSE::Type,
+        transb: sys::CBLAS_TRANSPOSE::Type,
+        m: MKL_INT,
+        n: MKL_INT,
+        k: MKL_INT,
+        alpha: Self,
+        a: *const Self,
+        lda: MKL_INT,
+        stridea: MKL_INT,
+        b: *const Self,
+        ldb: MKL_INT,
+        strideb: MKL_INT,
+        beta: Self,
+        c: *mut Self,
+        ldc: MKL_INT,
+        stridec: MKL_INT,
+        batch_size: MKL_INT,
+    );
+
+    /// `cblas_*trsm_batch_strided` — batched [`cblas_trsm`](Self::cblas_trsm).
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn cblas_trsm_batch_strided(
+        layout: sys::CBLAS_LAYOUT::Type,
+        side: sys::CBLAS_SIDE::Type,
+        uplo: sys::CBLAS_UPLO::Type,
+        trans: sys::CBLAS_TRANSPOSE::Type,
+        diag: sys::CBLAS_DIAG::Type,
+        m: MKL_INT,
+        n: MKL_INT,
+        alpha: Self,
+        a: *const Self,
+        lda: MKL_INT,
+        stridea: MKL_INT,
+        b: *mut Self,
+        ldb: MKL_INT,
+        strideb: MKL_INT,
+        batch_size: MKL_INT,
+    );
+
+    /// `cblas_*dgmm_batch_strided` — batched diagonal-matrix multiply.
+    /// `C[i] ← A[i] * diag(x[i])` (right) or `C[i] ← diag(x[i]) * A[i]`
+    /// (left).
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn cblas_dgmm_batch_strided(
+        layout: sys::CBLAS_LAYOUT::Type,
+        side: sys::CBLAS_SIDE::Type,
+        m: MKL_INT,
+        n: MKL_INT,
+        a: *const Self,
+        lda: MKL_INT,
+        stridea: MKL_INT,
+        x: *const Self,
+        incx: MKL_INT,
+        stridex: MKL_INT,
+        c: *mut Self,
+        ldc: MKL_INT,
+        stridec: MKL_INT,
+        batch_size: MKL_INT,
+    );
 }
 
 // =====================================================================
@@ -891,6 +1009,29 @@ pub trait ComplexBlasScalar: BlasScalar + ComplexScalar {
         c: *mut Self,
         ldc: MKL_INT,
     );
+
+    /// `cblas_*gemm3m_batch_strided` — batched [`cblas_gemm3m`](Self::cblas_gemm3m).
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn cblas_gemm3m_batch_strided(
+        layout: sys::CBLAS_LAYOUT::Type,
+        transa: sys::CBLAS_TRANSPOSE::Type,
+        transb: sys::CBLAS_TRANSPOSE::Type,
+        m: MKL_INT,
+        n: MKL_INT,
+        k: MKL_INT,
+        alpha: Self,
+        a: *const Self,
+        lda: MKL_INT,
+        stridea: MKL_INT,
+        b: *const Self,
+        ldb: MKL_INT,
+        strideb: MKL_INT,
+        beta: Self,
+        c: *mut Self,
+        ldc: MKL_INT,
+        stridec: MKL_INT,
+        batch_size: MKL_INT,
+    );
 }
 
 // =====================================================================
@@ -935,6 +1076,13 @@ macro_rules! impl_real_blas {
         omatcopy = $omatcopy:ident,
         omatcopy2 = $omatcopy2:ident,
         omatadd = $omatadd:ident,
+        // Batched (strided) — universal across all four scalar types
+        axpy_batch_strided = $axpy_batch:ident,
+        copy_batch_strided = $copy_batch:ident,
+        gemv_batch_strided = $gemv_batch:ident,
+        gemm_batch_strided = $gemm_batch:ident,
+        trsm_batch_strided = $trsm_batch:ident,
+        dgmm_batch_strided = $dgmm_batch:ident,
     ) => {
         impl BlasScalar for $ty {
             #[inline]
@@ -1215,6 +1363,103 @@ macro_rules! impl_real_blas {
                     )
                 }
             }
+            #[inline]
+            unsafe fn cblas_axpy_batch_strided(
+                n: MKL_INT, alpha: Self,
+                x: *const Self, incx: MKL_INT, stridex: MKL_INT,
+                y: *mut Self, incy: MKL_INT, stridey: MKL_INT,
+                batch_size: MKL_INT,
+            ) {
+                unsafe {
+                    sys::$axpy_batch(
+                        n, alpha, x, incx, stridex, y, incy, stridey, batch_size,
+                    )
+                }
+            }
+            #[inline]
+            unsafe fn cblas_copy_batch_strided(
+                n: MKL_INT,
+                x: *const Self, incx: MKL_INT, stridex: MKL_INT,
+                y: *mut Self, incy: MKL_INT, stridey: MKL_INT,
+                batch_size: MKL_INT,
+            ) {
+                unsafe {
+                    sys::$copy_batch(
+                        n, x, incx, stridex, y, incy, stridey, batch_size,
+                    )
+                }
+            }
+            #[inline]
+            unsafe fn cblas_gemv_batch_strided(
+                layout: sys::CBLAS_LAYOUT::Type, trans: sys::CBLAS_TRANSPOSE::Type,
+                m: MKL_INT, n: MKL_INT, alpha: Self,
+                a: *const Self, lda: MKL_INT, stridea: MKL_INT,
+                x: *const Self, incx: MKL_INT, stridex: MKL_INT,
+                beta: Self,
+                y: *mut Self, incy: MKL_INT, stridey: MKL_INT,
+                batch_size: MKL_INT,
+            ) {
+                unsafe {
+                    sys::$gemv_batch(
+                        layout, trans, m, n, alpha,
+                        a, lda, stridea, x, incx, stridex,
+                        beta, y, incy, stridey, batch_size,
+                    )
+                }
+            }
+            #[inline]
+            unsafe fn cblas_gemm_batch_strided(
+                layout: sys::CBLAS_LAYOUT::Type,
+                transa: sys::CBLAS_TRANSPOSE::Type,
+                transb: sys::CBLAS_TRANSPOSE::Type,
+                m: MKL_INT, n: MKL_INT, k: MKL_INT, alpha: Self,
+                a: *const Self, lda: MKL_INT, stridea: MKL_INT,
+                b: *const Self, ldb: MKL_INT, strideb: MKL_INT,
+                beta: Self,
+                c: *mut Self, ldc: MKL_INT, stridec: MKL_INT,
+                batch_size: MKL_INT,
+            ) {
+                unsafe {
+                    sys::$gemm_batch(
+                        layout, transa, transb, m, n, k, alpha,
+                        a, lda, stridea, b, ldb, strideb,
+                        beta, c, ldc, stridec, batch_size,
+                    )
+                }
+            }
+            #[inline]
+            unsafe fn cblas_trsm_batch_strided(
+                layout: sys::CBLAS_LAYOUT::Type, side: sys::CBLAS_SIDE::Type,
+                uplo: sys::CBLAS_UPLO::Type, trans: sys::CBLAS_TRANSPOSE::Type,
+                diag: sys::CBLAS_DIAG::Type, m: MKL_INT, n: MKL_INT, alpha: Self,
+                a: *const Self, lda: MKL_INT, stridea: MKL_INT,
+                b: *mut Self, ldb: MKL_INT, strideb: MKL_INT,
+                batch_size: MKL_INT,
+            ) {
+                unsafe {
+                    sys::$trsm_batch(
+                        layout, side, uplo, trans, diag, m, n, alpha,
+                        a, lda, stridea, b, ldb, strideb, batch_size,
+                    )
+                }
+            }
+            #[inline]
+            unsafe fn cblas_dgmm_batch_strided(
+                layout: sys::CBLAS_LAYOUT::Type, side: sys::CBLAS_SIDE::Type,
+                m: MKL_INT, n: MKL_INT,
+                a: *const Self, lda: MKL_INT, stridea: MKL_INT,
+                x: *const Self, incx: MKL_INT, stridex: MKL_INT,
+                c: *mut Self, ldc: MKL_INT, stridec: MKL_INT,
+                batch_size: MKL_INT,
+            ) {
+                unsafe {
+                    sys::$dgmm_batch(
+                        layout, side, m, n,
+                        a, lda, stridea, x, incx, stridex,
+                        c, ldc, stridec, batch_size,
+                    )
+                }
+            }
         }
 
         impl RealBlasScalar for $ty {
@@ -1352,6 +1597,12 @@ impl_real_blas!(
     axpby = cblas_saxpby,
     imatcopy = MKL_Simatcopy, omatcopy = MKL_Somatcopy,
     omatcopy2 = MKL_Somatcopy2, omatadd = MKL_Somatadd,
+    axpy_batch_strided = cblas_saxpy_batch_strided,
+    copy_batch_strided = cblas_scopy_batch_strided,
+    gemv_batch_strided = cblas_sgemv_batch_strided,
+    gemm_batch_strided = cblas_sgemm_batch_strided,
+    trsm_batch_strided = cblas_strsm_batch_strided,
+    dgmm_batch_strided = cblas_sdgmm_batch_strided,
 );
 
 impl_real_blas!(
@@ -1375,6 +1626,12 @@ impl_real_blas!(
     axpby = cblas_daxpby,
     imatcopy = MKL_Dimatcopy, omatcopy = MKL_Domatcopy,
     omatcopy2 = MKL_Domatcopy2, omatadd = MKL_Domatadd,
+    axpy_batch_strided = cblas_daxpy_batch_strided,
+    copy_batch_strided = cblas_dcopy_batch_strided,
+    gemv_batch_strided = cblas_dgemv_batch_strided,
+    gemm_batch_strided = cblas_dgemm_batch_strided,
+    trsm_batch_strided = cblas_dtrsm_batch_strided,
+    dgmm_batch_strided = cblas_ddgmm_batch_strided,
 );
 
 macro_rules! impl_complex_blas {
@@ -1403,12 +1660,20 @@ macro_rules! impl_complex_blas {
         // L3 complex-only
         hemm = $hemm:ident, herk = $herk:ident, her2k = $her2k:ident,
         gemm3m = $gemm3m:ident,
+        gemm3m_batch_strided = $gemm3m_batch:ident,
         // Extensions
         axpby = $axpby:ident,
         imatcopy = $imatcopy:ident,
         omatcopy = $omatcopy:ident,
         omatcopy2 = $omatcopy2:ident,
         omatadd = $omatadd:ident,
+        // Batched (strided) — universal across all four scalar types
+        axpy_batch_strided = $axpy_batch:ident,
+        copy_batch_strided = $copy_batch:ident,
+        gemv_batch_strided = $gemv_batch:ident,
+        gemm_batch_strided = $gemm_batch:ident,
+        trsm_batch_strided = $trsm_batch:ident,
+        dgmm_batch_strided = $dgmm_batch:ident,
     ) => {
         impl BlasScalar for $ty {
             #[inline]
@@ -1764,6 +2029,123 @@ macro_rules! impl_complex_blas {
                     )
                 }
             }
+            #[inline]
+            unsafe fn cblas_axpy_batch_strided(
+                n: MKL_INT, alpha: Self,
+                x: *const Self, incx: MKL_INT, stridex: MKL_INT,
+                y: *mut Self, incy: MKL_INT, stridey: MKL_INT,
+                batch_size: MKL_INT,
+            ) {
+                unsafe {
+                    sys::$axpy_batch(
+                        n,
+                        (&alpha as *const Self).cast(),
+                        x.cast(), incx, stridex,
+                        y.cast(), incy, stridey,
+                        batch_size,
+                    )
+                }
+            }
+            #[inline]
+            unsafe fn cblas_copy_batch_strided(
+                n: MKL_INT,
+                x: *const Self, incx: MKL_INT, stridex: MKL_INT,
+                y: *mut Self, incy: MKL_INT, stridey: MKL_INT,
+                batch_size: MKL_INT,
+            ) {
+                unsafe {
+                    sys::$copy_batch(
+                        n,
+                        x.cast(), incx, stridex,
+                        y.cast(), incy, stridey,
+                        batch_size,
+                    )
+                }
+            }
+            #[inline]
+            unsafe fn cblas_gemv_batch_strided(
+                layout: sys::CBLAS_LAYOUT::Type, trans: sys::CBLAS_TRANSPOSE::Type,
+                m: MKL_INT, n: MKL_INT, alpha: Self,
+                a: *const Self, lda: MKL_INT, stridea: MKL_INT,
+                x: *const Self, incx: MKL_INT, stridex: MKL_INT,
+                beta: Self,
+                y: *mut Self, incy: MKL_INT, stridey: MKL_INT,
+                batch_size: MKL_INT,
+            ) {
+                unsafe {
+                    sys::$gemv_batch(
+                        layout, trans, m, n,
+                        (&alpha as *const Self).cast(),
+                        a.cast(), lda, stridea,
+                        x.cast(), incx, stridex,
+                        (&beta as *const Self).cast(),
+                        y.cast(), incy, stridey,
+                        batch_size,
+                    )
+                }
+            }
+            #[inline]
+            unsafe fn cblas_gemm_batch_strided(
+                layout: sys::CBLAS_LAYOUT::Type,
+                transa: sys::CBLAS_TRANSPOSE::Type,
+                transb: sys::CBLAS_TRANSPOSE::Type,
+                m: MKL_INT, n: MKL_INT, k: MKL_INT, alpha: Self,
+                a: *const Self, lda: MKL_INT, stridea: MKL_INT,
+                b: *const Self, ldb: MKL_INT, strideb: MKL_INT,
+                beta: Self,
+                c: *mut Self, ldc: MKL_INT, stridec: MKL_INT,
+                batch_size: MKL_INT,
+            ) {
+                unsafe {
+                    sys::$gemm_batch(
+                        layout, transa, transb, m, n, k,
+                        (&alpha as *const Self).cast(),
+                        a.cast(), lda, stridea,
+                        b.cast(), ldb, strideb,
+                        (&beta as *const Self).cast(),
+                        c.cast(), ldc, stridec,
+                        batch_size,
+                    )
+                }
+            }
+            #[inline]
+            unsafe fn cblas_trsm_batch_strided(
+                layout: sys::CBLAS_LAYOUT::Type, side: sys::CBLAS_SIDE::Type,
+                uplo: sys::CBLAS_UPLO::Type, trans: sys::CBLAS_TRANSPOSE::Type,
+                diag: sys::CBLAS_DIAG::Type, m: MKL_INT, n: MKL_INT, alpha: Self,
+                a: *const Self, lda: MKL_INT, stridea: MKL_INT,
+                b: *mut Self, ldb: MKL_INT, strideb: MKL_INT,
+                batch_size: MKL_INT,
+            ) {
+                unsafe {
+                    sys::$trsm_batch(
+                        layout, side, uplo, trans, diag, m, n,
+                        (&alpha as *const Self).cast(),
+                        a.cast(), lda, stridea,
+                        b.cast(), ldb, strideb,
+                        batch_size,
+                    )
+                }
+            }
+            #[inline]
+            unsafe fn cblas_dgmm_batch_strided(
+                layout: sys::CBLAS_LAYOUT::Type, side: sys::CBLAS_SIDE::Type,
+                m: MKL_INT, n: MKL_INT,
+                a: *const Self, lda: MKL_INT, stridea: MKL_INT,
+                x: *const Self, incx: MKL_INT, stridex: MKL_INT,
+                c: *mut Self, ldc: MKL_INT, stridec: MKL_INT,
+                batch_size: MKL_INT,
+            ) {
+                unsafe {
+                    sys::$dgmm_batch(
+                        layout, side, m, n,
+                        a.cast(), lda, stridea,
+                        x.cast(), incx, stridex,
+                        c.cast(), ldc, stridec,
+                        batch_size,
+                    )
+                }
+            }
         }
 
         impl ComplexBlasScalar for $ty {
@@ -1999,6 +2381,30 @@ macro_rules! impl_complex_blas {
                     )
                 }
             }
+            #[inline]
+            unsafe fn cblas_gemm3m_batch_strided(
+                layout: sys::CBLAS_LAYOUT::Type,
+                transa: sys::CBLAS_TRANSPOSE::Type,
+                transb: sys::CBLAS_TRANSPOSE::Type,
+                m: MKL_INT, n: MKL_INT, k: MKL_INT, alpha: Self,
+                a: *const Self, lda: MKL_INT, stridea: MKL_INT,
+                b: *const Self, ldb: MKL_INT, strideb: MKL_INT,
+                beta: Self,
+                c: *mut Self, ldc: MKL_INT, stridec: MKL_INT,
+                batch_size: MKL_INT,
+            ) {
+                unsafe {
+                    sys::$gemm3m_batch(
+                        layout, transa, transb, m, n, k,
+                        (&alpha as *const Self).cast(),
+                        a.cast(), lda, stridea,
+                        b.cast(), ldb, strideb,
+                        (&beta as *const Self).cast(),
+                        c.cast(), ldc, stridec,
+                        batch_size,
+                    )
+                }
+            }
         }
     };
 }
@@ -2023,9 +2429,16 @@ impl_complex_blas!(
     trmm = cblas_ctrmm, trsm = cblas_ctrsm, gemmt = cblas_cgemmt,
     hemm = cblas_chemm, herk = cblas_cherk, her2k = cblas_cher2k,
     gemm3m = cblas_cgemm3m,
+    gemm3m_batch_strided = cblas_cgemm3m_batch_strided,
     axpby = cblas_caxpby,
     imatcopy = MKL_Cimatcopy, omatcopy = MKL_Comatcopy,
     omatcopy2 = MKL_Comatcopy2, omatadd = MKL_Comatadd,
+    axpy_batch_strided = cblas_caxpy_batch_strided,
+    copy_batch_strided = cblas_ccopy_batch_strided,
+    gemv_batch_strided = cblas_cgemv_batch_strided,
+    gemm_batch_strided = cblas_cgemm_batch_strided,
+    trsm_batch_strided = cblas_ctrsm_batch_strided,
+    dgmm_batch_strided = cblas_cdgmm_batch_strided,
 );
 
 impl_complex_blas!(
@@ -2048,7 +2461,14 @@ impl_complex_blas!(
     trmm = cblas_ztrmm, trsm = cblas_ztrsm, gemmt = cblas_zgemmt,
     hemm = cblas_zhemm, herk = cblas_zherk, her2k = cblas_zher2k,
     gemm3m = cblas_zgemm3m,
+    gemm3m_batch_strided = cblas_zgemm3m_batch_strided,
     axpby = cblas_zaxpby,
     imatcopy = MKL_Zimatcopy, omatcopy = MKL_Zomatcopy,
     omatcopy2 = MKL_Zomatcopy2, omatadd = MKL_Zomatadd,
+    axpy_batch_strided = cblas_zaxpy_batch_strided,
+    copy_batch_strided = cblas_zcopy_batch_strided,
+    gemv_batch_strided = cblas_zgemv_batch_strided,
+    gemm_batch_strided = cblas_zgemm_batch_strided,
+    trsm_batch_strided = cblas_ztrsm_batch_strided,
+    dgmm_batch_strided = cblas_zdgmm_batch_strided,
 );

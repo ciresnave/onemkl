@@ -5,15 +5,19 @@
 //! - [`axpby`] — generalization of `axpy` that scales `y`.
 //! - [`imatcopy`], [`omatcopy`], [`omatcopy2`], [`omatadd`] — combined
 //!   transposition and scaling.
+//! - Batched routines: [`axpy_batch_strided`], [`copy_batch_strided`],
+//!   [`gemv_batch_strided`], [`gemm_batch_strided`],
+//!   [`trsm_batch_strided`], [`dgmm_batch_strided`], and (complex-only)
+//!   [`gemm3m_batch_strided`].
 //!
-//! Batched routines (`?gemm_batch_strided`, `?trsm_batch_strided`, etc.)
-//! and the JIT / packed / mixed-precision GEMM APIs are wrapped in
-//! follow-up modules.
+//! The pointer-array variants (`?gemm_batch`, `?trsm_batch`, etc.) and
+//! the JIT / packed / mixed-precision GEMM APIs are wrapped in follow-up
+//! modules.
 
 use core::ffi::c_char;
 
-use crate::blas::scalar::BlasScalar;
-use crate::enums::{Layout, Transpose};
+use crate::blas::scalar::{BlasScalar, ComplexBlasScalar};
+use crate::enums::{Diag, Layout, Side, Transpose, UpLo};
 use crate::error::{Error, Result};
 use crate::util::{check_two_vectors, dim_to_mkl_int, stride_to_mkl_int};
 
@@ -272,6 +276,344 @@ fn check_imatcopy_buf(
         Transpose::Trans | Transpose::ConjTrans => (cols, rows),
     };
     check_matcopy_in(layout, post_rows, post_cols, ldb, buf_len, "AB")
+}
+
+// =====================================================================
+// Batched (strided) routines
+// =====================================================================
+
+/// Batched [`super::level1::axpy`]. Performs `batch_size` independent
+/// `axpy` operations: for `b in 0..batch_size`,
+/// `y[b*stridey..] ← alpha * x[b*stridex..] + y[b*stridey..]`,
+/// each addressing `n` elements at increment `incx` / `incy`.
+#[allow(clippy::too_many_arguments)]
+pub fn axpy_batch_strided<T: BlasScalar>(
+    n: usize,
+    alpha: T,
+    x: &[T],
+    incx: i64,
+    stridex: i64,
+    y: &mut [T],
+    incy: i64,
+    stridey: i64,
+    batch_size: usize,
+) -> Result<()> {
+    check_batch_buffers(x.len(), n, incx, stridex, batch_size, "x")?;
+    check_batch_buffers(y.len(), n, incy, stridey, batch_size, "y")?;
+    unsafe {
+        T::cblas_axpy_batch_strided(
+            dim_to_mkl_int(n)?,
+            alpha,
+            x.as_ptr(),
+            stride_to_mkl_int(incx)?,
+            stride_to_mkl_int(stridex)?,
+            y.as_mut_ptr(),
+            stride_to_mkl_int(incy)?,
+            stride_to_mkl_int(stridey)?,
+            dim_to_mkl_int(batch_size)?,
+        );
+    }
+    Ok(())
+}
+
+/// Batched [`super::level1::copy`].
+#[allow(clippy::too_many_arguments)]
+pub fn copy_batch_strided<T: BlasScalar>(
+    n: usize,
+    x: &[T],
+    incx: i64,
+    stridex: i64,
+    y: &mut [T],
+    incy: i64,
+    stridey: i64,
+    batch_size: usize,
+) -> Result<()> {
+    check_batch_buffers(x.len(), n, incx, stridex, batch_size, "x")?;
+    check_batch_buffers(y.len(), n, incy, stridey, batch_size, "y")?;
+    unsafe {
+        T::cblas_copy_batch_strided(
+            dim_to_mkl_int(n)?,
+            x.as_ptr(),
+            stride_to_mkl_int(incx)?,
+            stride_to_mkl_int(stridex)?,
+            y.as_mut_ptr(),
+            stride_to_mkl_int(incy)?,
+            stride_to_mkl_int(stridey)?,
+            dim_to_mkl_int(batch_size)?,
+        );
+    }
+    Ok(())
+}
+
+/// Batched [`super::level2::gemv`]. The same `m`, `n`, `lda`, `trans`,
+/// and increments apply to every batch entry; only the buffer offsets
+/// differ between entries.
+#[allow(clippy::too_many_arguments)]
+pub fn gemv_batch_strided<T: BlasScalar>(
+    layout: Layout,
+    trans: Transpose,
+    m: usize,
+    n: usize,
+    alpha: T,
+    a: &[T],
+    lda: usize,
+    stridea: i64,
+    x: &[T],
+    incx: i64,
+    stridex: i64,
+    beta: T,
+    y: &mut [T],
+    incy: i64,
+    stridey: i64,
+    batch_size: usize,
+) -> Result<()> {
+    let _ = (a.len(), x.len(), y.len()); // length checks deferred to MKL.
+    if batch_size == 0 {
+        return Ok(());
+    }
+    unsafe {
+        T::cblas_gemv_batch_strided(
+            layout.as_cblas(),
+            trans.as_cblas(),
+            dim_to_mkl_int(m)?,
+            dim_to_mkl_int(n)?,
+            alpha,
+            a.as_ptr(),
+            dim_to_mkl_int(lda)?,
+            stride_to_mkl_int(stridea)?,
+            x.as_ptr(),
+            stride_to_mkl_int(incx)?,
+            stride_to_mkl_int(stridex)?,
+            beta,
+            y.as_mut_ptr(),
+            stride_to_mkl_int(incy)?,
+            stride_to_mkl_int(stridey)?,
+            dim_to_mkl_int(batch_size)?,
+        );
+    }
+    Ok(())
+}
+
+/// Batched [`super::level3::gemm`]. Performs `batch_size` independent
+/// `gemm` operations sharing the same shapes and transpositions, with
+/// element-strides `stridea`, `strideb`, `stridec` between adjacent
+/// matrices in the `a`, `b`, `c` buffers.
+#[allow(clippy::too_many_arguments)]
+pub fn gemm_batch_strided<T: BlasScalar>(
+    layout: Layout,
+    transa: Transpose,
+    transb: Transpose,
+    m: usize,
+    n: usize,
+    k: usize,
+    alpha: T,
+    a: &[T],
+    lda: usize,
+    stridea: i64,
+    b: &[T],
+    ldb: usize,
+    strideb: i64,
+    beta: T,
+    c: &mut [T],
+    ldc: usize,
+    stridec: i64,
+    batch_size: usize,
+) -> Result<()> {
+    let _ = (a.len(), b.len(), c.len());
+    if batch_size == 0 {
+        return Ok(());
+    }
+    unsafe {
+        T::cblas_gemm_batch_strided(
+            layout.as_cblas(),
+            transa.as_cblas(),
+            transb.as_cblas(),
+            dim_to_mkl_int(m)?,
+            dim_to_mkl_int(n)?,
+            dim_to_mkl_int(k)?,
+            alpha,
+            a.as_ptr(),
+            dim_to_mkl_int(lda)?,
+            stride_to_mkl_int(stridea)?,
+            b.as_ptr(),
+            dim_to_mkl_int(ldb)?,
+            stride_to_mkl_int(strideb)?,
+            beta,
+            c.as_mut_ptr(),
+            dim_to_mkl_int(ldc)?,
+            stride_to_mkl_int(stridec)?,
+            dim_to_mkl_int(batch_size)?,
+        );
+    }
+    Ok(())
+}
+
+/// Batched [`super::level3::trsm`].
+#[allow(clippy::too_many_arguments)]
+pub fn trsm_batch_strided<T: BlasScalar>(
+    layout: Layout,
+    side: Side,
+    uplo: UpLo,
+    trans: Transpose,
+    diag: Diag,
+    m: usize,
+    n: usize,
+    alpha: T,
+    a: &[T],
+    lda: usize,
+    stridea: i64,
+    b: &mut [T],
+    ldb: usize,
+    strideb: i64,
+    batch_size: usize,
+) -> Result<()> {
+    let _ = (a.len(), b.len());
+    if batch_size == 0 {
+        return Ok(());
+    }
+    unsafe {
+        T::cblas_trsm_batch_strided(
+            layout.as_cblas(),
+            side.as_cblas(),
+            uplo.as_cblas(),
+            trans.as_cblas(),
+            diag.as_cblas(),
+            dim_to_mkl_int(m)?,
+            dim_to_mkl_int(n)?,
+            alpha,
+            a.as_ptr(),
+            dim_to_mkl_int(lda)?,
+            stride_to_mkl_int(stridea)?,
+            b.as_mut_ptr(),
+            dim_to_mkl_int(ldb)?,
+            stride_to_mkl_int(strideb)?,
+            dim_to_mkl_int(batch_size)?,
+        );
+    }
+    Ok(())
+}
+
+/// Batched diagonal-matrix multiply: for each batch entry,
+/// `C[i] ← A[i] * diag(x[i])` (`side == Right`) or
+/// `C[i] ← diag(x[i]) * A[i]` (`side == Left`).
+#[allow(clippy::too_many_arguments)]
+pub fn dgmm_batch_strided<T: BlasScalar>(
+    layout: Layout,
+    side: Side,
+    m: usize,
+    n: usize,
+    a: &[T],
+    lda: usize,
+    stridea: i64,
+    x: &[T],
+    incx: i64,
+    stridex: i64,
+    c: &mut [T],
+    ldc: usize,
+    stridec: i64,
+    batch_size: usize,
+) -> Result<()> {
+    let _ = (a.len(), x.len(), c.len());
+    if batch_size == 0 {
+        return Ok(());
+    }
+    unsafe {
+        T::cblas_dgmm_batch_strided(
+            layout.as_cblas(),
+            side.as_cblas(),
+            dim_to_mkl_int(m)?,
+            dim_to_mkl_int(n)?,
+            a.as_ptr(),
+            dim_to_mkl_int(lda)?,
+            stride_to_mkl_int(stridea)?,
+            x.as_ptr(),
+            stride_to_mkl_int(incx)?,
+            stride_to_mkl_int(stridex)?,
+            c.as_mut_ptr(),
+            dim_to_mkl_int(ldc)?,
+            stride_to_mkl_int(stridec)?,
+            dim_to_mkl_int(batch_size)?,
+        );
+    }
+    Ok(())
+}
+
+/// Batched complex `gemm3m`. Complex-only counterpart of
+/// [`gemm_batch_strided`].
+#[allow(clippy::too_many_arguments)]
+pub fn gemm3m_batch_strided<T: ComplexBlasScalar>(
+    layout: Layout,
+    transa: Transpose,
+    transb: Transpose,
+    m: usize,
+    n: usize,
+    k: usize,
+    alpha: T,
+    a: &[T],
+    lda: usize,
+    stridea: i64,
+    b: &[T],
+    ldb: usize,
+    strideb: i64,
+    beta: T,
+    c: &mut [T],
+    ldc: usize,
+    stridec: i64,
+    batch_size: usize,
+) -> Result<()> {
+    let _ = (a.len(), b.len(), c.len());
+    if batch_size == 0 {
+        return Ok(());
+    }
+    unsafe {
+        T::cblas_gemm3m_batch_strided(
+            layout.as_cblas(),
+            transa.as_cblas(),
+            transb.as_cblas(),
+            dim_to_mkl_int(m)?,
+            dim_to_mkl_int(n)?,
+            dim_to_mkl_int(k)?,
+            alpha,
+            a.as_ptr(),
+            dim_to_mkl_int(lda)?,
+            stride_to_mkl_int(stridea)?,
+            b.as_ptr(),
+            dim_to_mkl_int(ldb)?,
+            stride_to_mkl_int(strideb)?,
+            beta,
+            c.as_mut_ptr(),
+            dim_to_mkl_int(ldc)?,
+            stride_to_mkl_int(stridec)?,
+            dim_to_mkl_int(batch_size)?,
+        );
+    }
+    Ok(())
+}
+
+#[inline]
+fn check_batch_buffers(
+    buf_len: usize,
+    n: usize,
+    inc: i64,
+    stride: i64,
+    batch_size: usize,
+    _name: &'static str,
+) -> Result<()> {
+    if inc == 0 {
+        return Err(Error::InvalidArgument("vector stride must be non-zero"));
+    }
+    if batch_size == 0 || n == 0 {
+        return Ok(());
+    }
+    let abs_stride = stride.unsigned_abs() as usize;
+    let elem_span = 1 + (n - 1) * inc.unsigned_abs() as usize;
+    let needed = (batch_size - 1) * abs_stride + elem_span;
+    if buf_len < needed {
+        return Err(Error::InvalidArgument(
+            "batched buffer too short for n, inc, stride, and batch_size",
+        ));
+    }
+    Ok(())
 }
 
 fn invalid_arg_for(name: &'static str, msg: &'static str) -> Error {
