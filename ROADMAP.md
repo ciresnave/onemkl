@@ -111,10 +111,13 @@ Move every domain currently at MVP up to Common. Specifically:
 After 0.2, push BLAS, LAPACK, and Sparse to Comprehensive — these
 account for the vast majority of downstream use:
 
-- **BLAS Comprehensive**: compact BLAS (`mkl_?gemm_compact`,
-  `mkl_?trsm_compact`, `mkl_?potrf_compact`, etc.), mixed-precision
-  GEMMs (`bf16bf16f32`, `f16f16f32`, `e5m2e5m2f32`, `e4m3e4m3f32`),
-  full JIT GEMM lifecycle, packed compute (`cblas_gemm_*_pack`,
+- **BLAS Comprehensive**: ~~mixed-precision GEMMs (`bf16bf16f32`,
+  `f16f16f32`, `e5m2e5m2f32`, `e4m3e4m3f32`)~~ (done — `gemm_bf16_f32`
+  / `gemm_f16_f32` / `gemm_e5m2_f32` / `gemm_e4m3_f32` plus
+  `gemm_s8u8_s32` / `gemm_s16_s32` / `hgemm` in
+  `blas::mixed_precision`); compact BLAS (`mkl_?gemm_compact`,
+  `mkl_?trsm_compact`, `mkl_?potrf_compact`, etc.), full JIT GEMM
+  lifecycle, packed compute (`cblas_gemm_*_pack`,
   `cblas_gemm_*_compute`).
 - **LAPACK Comprehensive**: full auxiliary routine set (`?lacgv`,
   `?lacrm`, `?syconv`, `?larfg`, `?larft`, `?larfb`, `?lacpy`, etc.),
