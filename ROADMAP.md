@@ -115,10 +115,12 @@ account for the vast majority of downstream use:
   `f16f16f32`, `e5m2e5m2f32`, `e4m3e4m3f32`)~~ (done — `gemm_bf16_f32`
   / `gemm_f16_f32` / `gemm_e5m2_f32` / `gemm_e4m3_f32` plus
   `gemm_s8u8_s32` / `gemm_s16_s32` / `hgemm` in
-  `blas::mixed_precision`); compact BLAS (`mkl_?gemm_compact`,
-  `mkl_?trsm_compact`, `mkl_?potrf_compact`, etc.), full JIT GEMM
-  lifecycle, packed compute (`cblas_gemm_*_pack`,
-  `cblas_gemm_*_compute`).
+  `blas::mixed_precision`); ~~JIT GEMM lifecycle~~ (done — `JitGemm<T>`
+  in `blas::jit`); ~~packed compute (`cblas_gemm_*_pack`,
+  `cblas_gemm_*_compute`)~~ (done — `PackedMatrix<T>` plus
+  `gemm_compute_packed_{a,b}` in `blas::packed`); compact BLAS
+  (`mkl_?gemm_compact`, `mkl_?trsm_compact`, `mkl_?potrf_compact`,
+  etc.).
 - **LAPACK Comprehensive**: full auxiliary routine set (`?lacgv`,
   `?lacrm`, `?syconv`, `?larfg`, `?larft`, `?larfb`, `?lacpy`, etc.),
   Netlib-compatibility additions, `?tppack` / `?tpunpack`.

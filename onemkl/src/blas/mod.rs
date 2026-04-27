@@ -19,5 +19,6 @@ pub mod level1;
 pub mod level2;
 pub mod level3;
 pub mod mixed_precision;
+pub mod packed;
 
 pub use scalar::{BlasScalar, ComplexBlasScalar, RealBlasScalar};
