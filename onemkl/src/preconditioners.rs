@@ -161,3 +161,74 @@ pub fn ilut(
     jalut.truncate(nnz);
     Ok(IlutResult { alut, ialut, jalut })
 }
+
+/// Apply an ILU(0) or ILUT preconditioner: compute `M⁻¹ * v` for the
+/// factor stored in `alu` / `ia` / `ja`. The factor combines unit-lower
+/// `L` (implicit unit diagonal) with upper-triangular `U` in standard
+/// ILU storage; the function performs two triangular solves
+/// (`mkl_dcsrtrsv` for `L` then `U`) to produce the result.
+///
+/// `v` is the input vector. Returns a freshly allocated solution
+/// vector of length `n`.
+pub fn apply_ilu(
+    n: usize,
+    alu: &[f64],
+    ia: &[i32],
+    ja: &[i32],
+    v: &[f64],
+) -> Result<Vec<f64>> {
+    if ia.len() != n + 1 {
+        return Err(Error::InvalidArgument(
+            "ia must have length n + 1 for CSR storage",
+        ));
+    }
+    if v.len() != n {
+        return Err(Error::InvalidArgument(
+            "v must have length n",
+        ));
+    }
+    if alu.len() != ja.len() {
+        return Err(Error::InvalidArgument(
+            "alu and ja must have the same length",
+        ));
+    }
+    let n_i: c_int = n.try_into().map_err(|_| Error::DimensionOverflow)?;
+    let mut tmp = vec![0.0_f64; n];
+    let mut out = vec![0.0_f64; n];
+
+    // L * tmp = v, with unit diagonal.
+    let uplo_l = b'L' as core::ffi::c_char;
+    let trans = b'N' as core::ffi::c_char;
+    let diag_unit = b'U' as core::ffi::c_char;
+    unsafe {
+        sys::mkl_dcsrtrsv(
+            &uplo_l,
+            &trans,
+            &diag_unit,
+            &n_i,
+            alu.as_ptr(),
+            ia.as_ptr(),
+            ja.as_ptr(),
+            v.as_ptr(),
+            tmp.as_mut_ptr(),
+        );
+    }
+
+    // U * out = tmp, non-unit diagonal.
+    let uplo_u = b'U' as core::ffi::c_char;
+    let diag_nonunit = b'N' as core::ffi::c_char;
+    unsafe {
+        sys::mkl_dcsrtrsv(
+            &uplo_u,
+            &trans,
+            &diag_nonunit,
+            &n_i,
+            alu.as_ptr(),
+            ia.as_ptr(),
+            ja.as_ptr(),
+            tmp.as_ptr(),
+            out.as_mut_ptr(),
+        );
+    }
+    Ok(out)
+}

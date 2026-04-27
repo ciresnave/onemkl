@@ -34,7 +34,7 @@ function(s).
 | PARDISO | MVP+ | Factor + solve, multi-RHS, cached factorization, diagonal extraction, save/restore handle, low-level `export`, user `perm` |
 | DSS | Common | Real + complex (single + double precision) factor / solve, multi-RHS, statistics (timing / memory / determinant / inertia) |
 | ISS (CG, FGMRES) | Common | Closure-driven mat-vec; preconditioned CG; `IssResult` with iterations / residual norms / stop reason; full RCI surface via `CgSession` / `FgmresSession` |
-| Preconditioners | MVP | ILU0, ILUT |
+| Preconditioners | Common | ILU0, ILUT, plus `apply_ilu` for two-step triangular solve. ILU0 / ILUT are MKL's only RCI preconditioners — no SSOR / Jacobi / Chebyshev exposed. |
 | FEAST | Common | Dense / CSR / banded standard problems; dense generalized problem; real + complex; RCI still TODO |
 | VM (Vector Math) | Common | All major function families |
 | RNG (VSL) | Common | RAII `Stream` + 8 continuous + 4 discrete distributions; 1-D convolution / correlation tasks; summary statistics (mean / variance / min / max / sum) |
