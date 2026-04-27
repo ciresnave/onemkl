@@ -171,6 +171,30 @@ fn get_diagonal_before_factorize_errors() {
 }
 
 #[test]
+fn perm_records_fill_reducing_permutation() {
+    // With iparm[4] = 2, MKL writes the fill-reducing permutation it
+    // chose into the user's perm array. We provide a length-n
+    // pre-allocated perm and verify after factorization that MKL
+    // populated it (i.e. it's not all zeros and contains values
+    // within [1, n]).
+    let ia = vec![1_i32, 3, 5, 6];
+    let ja = vec![1_i32, 2, 2, 3, 3];
+    let a = vec![4.0_f64, -1.0, 4.0, -1.0, 4.0];
+
+    let mut solver = Pardiso::<f64>::new(PardisoMatrixType::RealSpd)
+        .with_indexing(IndexBase::One);
+    solver.set_perm(Some(vec![0_i32; 3]));
+    solver.iparm()[4] = 2; // ask MKL to write its perm choice
+    solver.analyze_and_factorize(3, &a, &ia, &ja).unwrap();
+
+    let perm = solver.perm().expect("perm should still be present");
+    // Permutation is 1-based and a permutation of [1..=n].
+    let mut sorted: Vec<i32> = perm.to_vec();
+    sorted.sort();
+    assert_eq!(sorted, vec![1, 2, 3]);
+}
+
+#[test]
 fn save_then_restore_handle_roundtrips() {
     let dir = tempfile::tempdir().unwrap();
     let dir_path = dir.path();

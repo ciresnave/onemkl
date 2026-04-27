@@ -119,6 +119,13 @@ pub struct Pardiso<T> {
     mtype: c_int,
     msglvl: c_int,
     indexing: IndexBase,
+    // Optional permutation array. If `None`, MKL receives NULL and
+    // chooses a fill-reducing permutation internally. Stored on the
+    // struct so its address stays valid across phase calls (MKL may
+    // read it mid-pipeline). Used in particular for Schur complement
+    // extraction (`iparm[35] = 1`) where a non-NULL perm marks which
+    // rows / columns are in the Schur block.
+    perm: Option<Vec<c_int>>,
     initialized: bool,
     factorized: bool,
     factorized_n: c_int,
@@ -164,6 +171,7 @@ impl<T: PardisoScalar> Pardiso<T> {
             mtype: mtype_int,
             msglvl: 0,
             indexing: IndexBase::One,
+            perm: None,
             initialized: true,
             factorized: false,
             factorized_n: 0,
@@ -192,6 +200,32 @@ impl<T: PardisoScalar> Pardiso<T> {
     #[inline]
     pub fn iparm(&mut self) -> &mut [c_int; 64] {
         &mut self.iparm
+    }
+
+    /// Install a permutation / partition array. The vector must have
+    /// length `n` (the order of the matrix passed to subsequent
+    /// `analyze_and_factorize` / `solve` calls). Pass `None` to clear
+    /// it back to NULL.
+    ///
+    /// Common uses:
+    /// - With `iparm[4] = 1`, MKL uses `perm` as a user-supplied
+    ///   fill-reducing permutation rather than computing its own.
+    /// - With `iparm[4] = 2`, MKL writes the fill-reducing permutation
+    ///   it chose into `perm`.
+    /// - With `iparm[35] = 1`, `perm[i] = 1` marks row `i` as part of
+    ///   the Schur complement block; `perm[i] = 0` marks it as
+    ///   interior. The Schur complement can then be read out via
+    ///   [`export`](Self::export).
+    pub fn set_perm(&mut self, perm: Option<Vec<c_int>>) {
+        self.perm = perm;
+    }
+
+    /// Borrow the installed permutation array, if any. Useful for
+    /// reading back the fill-reducing permutation MKL wrote when
+    /// `iparm[4] = 2`.
+    #[inline]
+    pub fn perm(&self) -> Option<&[c_int]> {
+        self.perm.as_deref()
     }
 
     /// Run the analysis (phase 11) followed by numerical factorization
@@ -360,23 +394,22 @@ impl<T: PardisoScalar> Pardiso<T> {
     /// Export factor data (typically the Schur complement) from a
     /// factorized handle. Wraps `pardiso_export`.
     ///
-    /// `pardiso_export` uses a step-based protocol: invoke `step = 0`
-    /// first to obtain the size of `ia`, then allocate `ia` / `ja` /
-    /// `values` buffers and invoke `step = 1` to populate them.
+    /// `pardiso_export` uses a step-based protocol: pass increasing
+    /// `step` values together with `iparm` to extract progressively
+    /// larger pieces of the factor data. The exact step / iparm
+    /// combination required for each output (Schur complement,
+    /// L / U factors, etc.) is documented in the oneMKL PARDISO Export
+    /// reference and varies by MKL version.
     ///
-    /// # Note on Schur complement
+    /// Pass `None` for `values` and / or `ja` when only `ia` is being
+    /// filled.
     ///
-    /// To extract the Schur complement, the factorization must have
-    /// been performed with `iparm[35] = 1` **and** a non-NULL `perm`
-    /// array marking which rows / columns are in the Schur block
-    /// (`perm[i] = 1`) versus the interior (`perm[i] = 0`). The
-    /// current [`analyze_and_factorize`](Self::analyze_and_factorize)
-    /// API passes `perm = NULL`, so calling `export` for Schur
-    /// extraction will likely access invalid memory inside MKL.
-    /// Schur-complement support is tracked separately; until it
-    /// lands, this method is primarily useful as a low-level escape
-    /// hatch for callers driving the FFI directly via the raw
-    /// bindings.
+    /// **Note:** Schur complement extraction (`iparm[35] = 1` plus a
+    /// partition `perm`) has additional MKL-version-specific
+    /// requirements that we have not fully validated; calling this
+    /// method in that mode may crash inside MKL. The infrastructure —
+    /// [`set_perm`](Self::set_perm) and `pardiso_export` itself — is
+    /// in place once the correct call sequence is determined.
     pub fn export(
         &mut self,
         step: i32,
@@ -459,6 +492,10 @@ impl<T: PardisoScalar> Pardiso<T> {
             IndexBase::Zero => 1,
         };
         let mtype = self.mtype;
+        let perm_ptr: *mut c_int = match self.perm.as_mut() {
+            Some(p) => p.as_mut_ptr(),
+            None => ptr::null_mut(),
+        };
 
         unsafe {
             sys::pardiso(
@@ -471,7 +508,7 @@ impl<T: PardisoScalar> Pardiso<T> {
                 a.as_ptr().cast(),
                 ia.as_ptr(),
                 ja.as_ptr(),
-                ptr::null_mut(),
+                perm_ptr,
                 &nrhs,
                 self.iparm.as_mut_ptr(),
                 &self.msglvl,
