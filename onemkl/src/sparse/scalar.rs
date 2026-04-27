@@ -110,6 +110,38 @@ pub trait SparseScalar: Scalar {
     ) -> sparse_status_t::Type;
 
     #[allow(clippy::too_many_arguments)]
+    unsafe fn sparse_dotmv(
+        op: sparse_operation_t::Type,
+        alpha: Self,
+        a: sparse_matrix_t,
+        descr: matrix_descr,
+        x: *const Self,
+        beta: Self,
+        y: *mut Self,
+        d: *mut Self,
+    ) -> sparse_status_t::Type;
+
+    unsafe fn sparse_symgs(
+        op: sparse_operation_t::Type,
+        a: sparse_matrix_t,
+        descr: matrix_descr,
+        alpha: Self,
+        b: *const Self,
+        x: *mut Self,
+    ) -> sparse_status_t::Type;
+
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn sparse_symgs_mv(
+        op: sparse_operation_t::Type,
+        a: sparse_matrix_t,
+        descr: matrix_descr,
+        alpha: Self,
+        b: *const Self,
+        x: *mut Self,
+        y: *mut Self,
+    ) -> sparse_status_t::Type;
+
+    #[allow(clippy::too_many_arguments)]
     unsafe fn sparse_spmmd(
         op: sparse_operation_t::Type,
         a: sparse_matrix_t,
@@ -126,6 +158,7 @@ macro_rules! impl_sparse_real {
         create_csc=$create_csc:ident, create_bsr=$create_bsr:ident,
         mv=$mv:ident, mm=$mm:ident, trsv=$trsv:ident,
         add=$add:ident, spmmd=$spmmd:ident,
+        dotmv=$dotmv:ident, symgs=$symgs:ident, symgs_mv=$symgs_mv:ident,
     ) => {
         impl SparseScalar for $ty {
             unsafe fn sparse_create_csr(
@@ -231,6 +264,39 @@ macro_rules! impl_sparse_real {
             ) -> sparse_status_t::Type {
                 unsafe { sys::$spmmd(op, a, b, layout, c, ldc) }
             }
+            unsafe fn sparse_dotmv(
+                op: sparse_operation_t::Type,
+                alpha: Self,
+                a: sparse_matrix_t,
+                descr: matrix_descr,
+                x: *const Self,
+                beta: Self,
+                y: *mut Self,
+                d: *mut Self,
+            ) -> sparse_status_t::Type {
+                unsafe { sys::$dotmv(op, alpha, a, descr, x, beta, y, d) }
+            }
+            unsafe fn sparse_symgs(
+                op: sparse_operation_t::Type,
+                a: sparse_matrix_t,
+                descr: matrix_descr,
+                alpha: Self,
+                b: *const Self,
+                x: *mut Self,
+            ) -> sparse_status_t::Type {
+                unsafe { sys::$symgs(op, a, descr, alpha, b, x) }
+            }
+            unsafe fn sparse_symgs_mv(
+                op: sparse_operation_t::Type,
+                a: sparse_matrix_t,
+                descr: matrix_descr,
+                alpha: Self,
+                b: *const Self,
+                x: *mut Self,
+                y: *mut Self,
+            ) -> sparse_status_t::Type {
+                unsafe { sys::$symgs_mv(op, a, descr, alpha, b, x, y) }
+            }
         }
     };
 }
@@ -243,6 +309,7 @@ impl_sparse_real!(
     create_bsr=mkl_sparse_s_create_bsr,
     mv=mkl_sparse_s_mv, mm=mkl_sparse_s_mm, trsv=mkl_sparse_s_trsv,
     add=mkl_sparse_s_add, spmmd=mkl_sparse_s_spmmd,
+    dotmv=mkl_sparse_s_dotmv, symgs=mkl_sparse_s_symgs, symgs_mv=mkl_sparse_s_symgs_mv,
 );
 impl_sparse_real!(
     f64,
@@ -252,6 +319,7 @@ impl_sparse_real!(
     create_bsr=mkl_sparse_d_create_bsr,
     mv=mkl_sparse_d_mv, mm=mkl_sparse_d_mm, trsv=mkl_sparse_d_trsv,
     add=mkl_sparse_d_add, spmmd=mkl_sparse_d_spmmd,
+    dotmv=mkl_sparse_d_dotmv, symgs=mkl_sparse_d_symgs, symgs_mv=mkl_sparse_d_symgs_mv,
 );
 
 macro_rules! impl_sparse_complex {
@@ -260,6 +328,7 @@ macro_rules! impl_sparse_complex {
         create_csc=$create_csc:ident, create_bsr=$create_bsr:ident,
         mv=$mv:ident, mm=$mm:ident, trsv=$trsv:ident,
         add=$add:ident, spmmd=$spmmd:ident,
+        dotmv=$dotmv:ident, symgs=$symgs:ident, symgs_mv=$symgs_mv:ident,
     ) => {
         impl SparseScalar for $ty {
             unsafe fn sparse_create_csr(
@@ -389,6 +458,59 @@ macro_rules! impl_sparse_complex {
             ) -> sparse_status_t::Type {
                 unsafe { sys::$spmmd(op, a, b, layout, c.cast(), ldc) }
             }
+            unsafe fn sparse_dotmv(
+                op: sparse_operation_t::Type,
+                alpha: Self,
+                a: sparse_matrix_t,
+                descr: matrix_descr,
+                x: *const Self,
+                beta: Self,
+                y: *mut Self,
+                d: *mut Self,
+            ) -> sparse_status_t::Type {
+                unsafe {
+                    sys::$dotmv(
+                        op,
+                        core::mem::transmute_copy(&alpha),
+                        a, descr, x.cast(),
+                        core::mem::transmute_copy(&beta),
+                        y.cast(), d.cast(),
+                    )
+                }
+            }
+            unsafe fn sparse_symgs(
+                op: sparse_operation_t::Type,
+                a: sparse_matrix_t,
+                descr: matrix_descr,
+                alpha: Self,
+                b: *const Self,
+                x: *mut Self,
+            ) -> sparse_status_t::Type {
+                unsafe {
+                    sys::$symgs(
+                        op, a, descr,
+                        core::mem::transmute_copy(&alpha),
+                        b.cast(), x.cast(),
+                    )
+                }
+            }
+            unsafe fn sparse_symgs_mv(
+                op: sparse_operation_t::Type,
+                a: sparse_matrix_t,
+                descr: matrix_descr,
+                alpha: Self,
+                b: *const Self,
+                x: *mut Self,
+                y: *mut Self,
+            ) -> sparse_status_t::Type {
+                unsafe {
+                    sys::$symgs_mv(
+                        op, a, descr,
+                        core::mem::transmute_copy(&alpha),
+                        b.cast(), x.cast(), y.cast(),
+                    )
+                }
+            }
         }
     };
 }
@@ -401,6 +523,7 @@ impl_sparse_complex!(
     create_bsr=mkl_sparse_c_create_bsr,
     mv=mkl_sparse_c_mv, mm=mkl_sparse_c_mm, trsv=mkl_sparse_c_trsv,
     add=mkl_sparse_c_add, spmmd=mkl_sparse_c_spmmd,
+    dotmv=mkl_sparse_c_dotmv, symgs=mkl_sparse_c_symgs, symgs_mv=mkl_sparse_c_symgs_mv,
 );
 impl_sparse_complex!(
     Complex64,
@@ -410,4 +533,5 @@ impl_sparse_complex!(
     create_bsr=mkl_sparse_z_create_bsr,
     mv=mkl_sparse_z_mv, mm=mkl_sparse_z_mm, trsv=mkl_sparse_z_trsv,
     add=mkl_sparse_z_add, spmmd=mkl_sparse_z_spmmd,
+    dotmv=mkl_sparse_z_dotmv, symgs=mkl_sparse_z_symgs, symgs_mv=mkl_sparse_z_symgs_mv,
 );

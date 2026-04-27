@@ -30,7 +30,7 @@ function(s).
 | BLAS L1/L2/L3 | Common | All universal + real-only + complex-only routines, including banded and packed |
 | BLAS-like extensions | Common | `axpby`, `imatcopy`/`omatcopy`/`omatcopy2`/`omatadd`, batched (strided) `gemm`/`trsm`/`gemv`/`dgmm`/`axpy`/`copy`/`gemm3m`; pointer-array `gemm_batch` / `gemv_batch` / `trsm_batch` |
 | LAPACK | Common | Linear solve, QR, LS, eigenvalue (incl. RRR + D&C), SVD, banded, packed, generalized |
-| Sparse BLAS (IE) | Common | CSR / COO / CSC / BSR construction; `mv`/`mm`/`trsv`/`optimize` + Sparse QR factor / solve; copy / convert / order / mv-mm-sv hint setters |
+| Sparse BLAS (IE) | Common+ | CSR / COO / CSC / BSR construction; `mv`/`mm`/`trsv`/`optimize` + Sparse QR factor / solve; copy / convert / order / mv-mm-sv hint setters; sparse arithmetic (`add`, `spmm`, `spmmd`); CG-style `dot_mv`; Gauss–Seidel sweep (`symgs`, `symgs_mv`) |
 | PARDISO | Common | Factor + solve, multi-RHS, cached factorization, diagonal extraction, save/restore handle, low-level `export`, user `perm`, `pardiso_64_raw`, custom pivot callback |
 | DSS | Common | Real + complex (single + double precision) factor / solve, multi-RHS, statistics (timing / memory / determinant / inertia) |
 | ISS (CG, FGMRES) | Common | Closure-driven mat-vec; preconditioned CG; `IssResult` with iterations / residual norms / stop reason; full RCI surface via `CgSession` / `FgmresSession` |
@@ -131,10 +131,10 @@ account for the vast majority of downstream use:
 - **Sparse Comprehensive**: ~~matrix manipulation
   (`mkl_sparse_*_add`, `mkl_sparse_*_spmm`,
   `mkl_sparse_*_spmmd`)~~ (done — `SparseMatrix::{add, spmm,
-  spmmd}`); `mkl_sparse_sp2m` (with request flags), `_dotmv`,
-  `_symgs` / `_symgs_mv` (Gauss–Seidel sweep), `_syprd`
-  (`A · diag · Aᵀ`), inspector-executor analysis routines, full
-  export API.
+  spmmd}`); ~~`_dotmv`, `_symgs`, `_symgs_mv`~~ (done —
+  `SparseMatrix::{dot_mv, symgs, symgs_mv}`); `mkl_sparse_sp2m`
+  (with request flags), `_syprd` (`A · diag · Aᵀ`),
+  inspector-executor analysis routines, full export API.
 
 ### 0.4.0 — Domain-completion sweep
 

@@ -901,6 +901,120 @@ impl<T: SparseScalar> SparseMatrix<T> {
         Ok(out)
     }
 
+    /// `y ← α · op(self) · x + β · y` and simultaneously `d = xᵀ · y`
+    /// (the dot product of the input `x` with the new `y`). Saves one
+    /// pass over `x` and `y` in iterative solvers like CG that
+    /// otherwise compute the dot separately. Wraps
+    /// `mkl_sparse_*_dotmv`.
+    pub fn dot_mv(
+        &self,
+        op: Operation,
+        alpha: T,
+        descr: impl Into<MatrixDescr>,
+        x: &[T],
+        beta: T,
+        y: &mut [T],
+    ) -> Result<T>
+    where
+        T: Default,
+    {
+        let needed_x = match op {
+            Operation::NoTrans => self.cols,
+            _ => self.rows,
+        };
+        let needed_y = match op {
+            Operation::NoTrans => self.rows,
+            _ => self.cols,
+        };
+        if x.len() < needed_x {
+            return Err(Error::InvalidArgument("x is too short for op(A)*x"));
+        }
+        if y.len() < needed_y {
+            return Err(Error::InvalidArgument("y is too short for op(A)*x"));
+        }
+        let descr_inner = descr.into().inner;
+        let mut d: T = T::default();
+        let status = unsafe {
+            T::sparse_dotmv(
+                op.as_sys(),
+                alpha,
+                self.handle,
+                descr_inner,
+                x.as_ptr(),
+                beta,
+                y.as_mut_ptr(),
+                &mut d,
+            )
+        };
+        check_sparse(status)?;
+        Ok(d)
+    }
+
+    /// Symmetric Gauss–Seidel sweep: solve `(L + D)x = α · b` (one
+    /// forward sweep) or the symmetric upper-then-lower variant
+    /// depending on `op`. Used as a smoother in multigrid solvers
+    /// and as a stationary preconditioner. Wraps
+    /// `mkl_sparse_*_symgs`.
+    pub fn symgs(
+        &self,
+        op: Operation,
+        descr: impl Into<MatrixDescr>,
+        alpha: T,
+        b: &[T],
+        x: &mut [T],
+    ) -> Result<()> {
+        if b.len() < self.rows || x.len() < self.rows {
+            return Err(Error::InvalidArgument(
+                "b and x must each have at least n entries",
+            ));
+        }
+        let descr_inner = descr.into().inner;
+        let status = unsafe {
+            T::sparse_symgs(
+                op.as_sys(),
+                self.handle,
+                descr_inner,
+                alpha,
+                b.as_ptr(),
+                x.as_mut_ptr(),
+            )
+        };
+        check_sparse(status)
+    }
+
+    /// Combined Gauss–Seidel sweep + matrix-vector product: performs
+    /// the [`symgs`](Self::symgs) sweep and writes `y = A · x` for
+    /// the updated `x` in a single pass. Wraps
+    /// `mkl_sparse_*_symgs_mv`.
+    pub fn symgs_mv(
+        &self,
+        op: Operation,
+        descr: impl Into<MatrixDescr>,
+        alpha: T,
+        b: &[T],
+        x: &mut [T],
+        y: &mut [T],
+    ) -> Result<()> {
+        if b.len() < self.rows || x.len() < self.rows || y.len() < self.rows {
+            return Err(Error::InvalidArgument(
+                "b, x, and y must each have at least n entries",
+            ));
+        }
+        let descr_inner = descr.into().inner;
+        let status = unsafe {
+            T::sparse_symgs_mv(
+                op.as_sys(),
+                self.handle,
+                descr_inner,
+                alpha,
+                b.as_ptr(),
+                x.as_mut_ptr(),
+                y.as_mut_ptr(),
+            )
+        };
+        check_sparse(status)
+    }
+
     /// Build a [`SparseMatrix`] around an MKL handle whose internal
     /// storage MKL owns (e.g. the result of copy or convert).
     fn new_mkl_owned(handle: sparse_matrix_t, rows: usize, cols: usize) -> Self {
