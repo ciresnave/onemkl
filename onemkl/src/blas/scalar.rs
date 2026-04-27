@@ -587,6 +587,44 @@ pub trait BlasScalar: Scalar {
         group_size: *const MKL_INT,
     );
 
+    /// `cblas_*gemv_batch` — pointer-array batched GEMV.
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn cblas_gemv_batch(
+        layout: sys::CBLAS_LAYOUT::Type,
+        trans_array: *const sys::CBLAS_TRANSPOSE::Type,
+        m_array: *const MKL_INT,
+        n_array: *const MKL_INT,
+        alpha_array: *const Self,
+        a_array: *mut *const Self,
+        lda_array: *const MKL_INT,
+        x_array: *mut *const Self,
+        incx_array: *const MKL_INT,
+        beta_array: *const Self,
+        y_array: *mut *mut Self,
+        incy_array: *const MKL_INT,
+        group_count: MKL_INT,
+        group_size: *const MKL_INT,
+    );
+
+    /// `cblas_*trsm_batch` — pointer-array batched TRSM.
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn cblas_trsm_batch(
+        layout: sys::CBLAS_LAYOUT::Type,
+        side_array: *const sys::CBLAS_SIDE::Type,
+        uplo_array: *const sys::CBLAS_UPLO::Type,
+        transa_array: *const sys::CBLAS_TRANSPOSE::Type,
+        diag_array: *const sys::CBLAS_DIAG::Type,
+        m_array: *const MKL_INT,
+        n_array: *const MKL_INT,
+        alpha_array: *const Self,
+        a_array: *mut *const Self,
+        lda_array: *const MKL_INT,
+        b_array: *mut *mut Self,
+        ldb_array: *const MKL_INT,
+        group_count: MKL_INT,
+        group_size: *const MKL_INT,
+    );
+
     /// `cblas_*trsm_batch_strided` — batched [`cblas_trsm`](Self::cblas_trsm).
     #[allow(clippy::too_many_arguments)]
     unsafe fn cblas_trsm_batch_strided(
@@ -1107,7 +1145,9 @@ macro_rules! impl_real_blas {
         gemv_batch_strided = $gemv_batch:ident,
         gemm_batch_strided = $gemm_batch:ident,
         gemm_batch_ptr = $gemm_batch_ptr:ident,
+        gemv_batch_ptr = $gemv_batch_ptr:ident,
         trsm_batch_strided = $trsm_batch:ident,
+        trsm_batch_ptr = $trsm_batch_ptr:ident,
         dgmm_batch_strided = $dgmm_batch:ident,
     ) => {
         impl BlasScalar for $ty {
@@ -1486,6 +1526,64 @@ macro_rules! impl_real_blas {
                 }
             }
             #[inline]
+            unsafe fn cblas_gemv_batch(
+                layout: sys::CBLAS_LAYOUT::Type,
+                trans_array: *const sys::CBLAS_TRANSPOSE::Type,
+                m_array: *const MKL_INT,
+                n_array: *const MKL_INT,
+                alpha_array: *const Self,
+                a_array: *mut *const Self,
+                lda_array: *const MKL_INT,
+                x_array: *mut *const Self,
+                incx_array: *const MKL_INT,
+                beta_array: *const Self,
+                y_array: *mut *mut Self,
+                incy_array: *const MKL_INT,
+                group_count: MKL_INT,
+                group_size: *const MKL_INT,
+            ) {
+                unsafe {
+                    sys::$gemv_batch_ptr(
+                        layout, trans_array, m_array, n_array,
+                        alpha_array,
+                        a_array, lda_array,
+                        x_array, incx_array,
+                        beta_array,
+                        y_array, incy_array,
+                        group_count, group_size,
+                    )
+                }
+            }
+            #[inline]
+            unsafe fn cblas_trsm_batch(
+                layout: sys::CBLAS_LAYOUT::Type,
+                side_array: *const sys::CBLAS_SIDE::Type,
+                uplo_array: *const sys::CBLAS_UPLO::Type,
+                transa_array: *const sys::CBLAS_TRANSPOSE::Type,
+                diag_array: *const sys::CBLAS_DIAG::Type,
+                m_array: *const MKL_INT,
+                n_array: *const MKL_INT,
+                alpha_array: *const Self,
+                a_array: *mut *const Self,
+                lda_array: *const MKL_INT,
+                b_array: *mut *mut Self,
+                ldb_array: *const MKL_INT,
+                group_count: MKL_INT,
+                group_size: *const MKL_INT,
+            ) {
+                unsafe {
+                    sys::$trsm_batch_ptr(
+                        layout, side_array, uplo_array,
+                        transa_array, diag_array,
+                        m_array, n_array,
+                        alpha_array,
+                        a_array, lda_array,
+                        b_array, ldb_array,
+                        group_count, group_size,
+                    )
+                }
+            }
+            #[inline]
             unsafe fn cblas_trsm_batch_strided(
                 layout: sys::CBLAS_LAYOUT::Type, side: sys::CBLAS_SIDE::Type,
                 uplo: sys::CBLAS_UPLO::Type, trans: sys::CBLAS_TRANSPOSE::Type,
@@ -1660,7 +1758,9 @@ impl_real_blas!(
     gemv_batch_strided = cblas_sgemv_batch_strided,
     gemm_batch_strided = cblas_sgemm_batch_strided,
     gemm_batch_ptr = cblas_sgemm_batch,
+    gemv_batch_ptr = cblas_sgemv_batch,
     trsm_batch_strided = cblas_strsm_batch_strided,
+    trsm_batch_ptr = cblas_strsm_batch,
     dgmm_batch_strided = cblas_sdgmm_batch_strided,
 );
 
@@ -1690,7 +1790,9 @@ impl_real_blas!(
     gemv_batch_strided = cblas_dgemv_batch_strided,
     gemm_batch_strided = cblas_dgemm_batch_strided,
     gemm_batch_ptr = cblas_dgemm_batch,
+    gemv_batch_ptr = cblas_dgemv_batch,
     trsm_batch_strided = cblas_dtrsm_batch_strided,
+    trsm_batch_ptr = cblas_dtrsm_batch,
     dgmm_batch_strided = cblas_ddgmm_batch_strided,
 );
 
@@ -1733,7 +1835,9 @@ macro_rules! impl_complex_blas {
         gemv_batch_strided = $gemv_batch:ident,
         gemm_batch_strided = $gemm_batch:ident,
         gemm_batch_ptr = $gemm_batch_ptr:ident,
+        gemv_batch_ptr = $gemv_batch_ptr:ident,
         trsm_batch_strided = $trsm_batch:ident,
+        trsm_batch_ptr = $trsm_batch_ptr:ident,
         dgmm_batch_strided = $dgmm_batch:ident,
     ) => {
         impl BlasScalar for $ty {
@@ -2202,6 +2306,64 @@ macro_rules! impl_complex_blas {
                 }
             }
             #[inline]
+            unsafe fn cblas_gemv_batch(
+                layout: sys::CBLAS_LAYOUT::Type,
+                trans_array: *const sys::CBLAS_TRANSPOSE::Type,
+                m_array: *const MKL_INT,
+                n_array: *const MKL_INT,
+                alpha_array: *const Self,
+                a_array: *mut *const Self,
+                lda_array: *const MKL_INT,
+                x_array: *mut *const Self,
+                incx_array: *const MKL_INT,
+                beta_array: *const Self,
+                y_array: *mut *mut Self,
+                incy_array: *const MKL_INT,
+                group_count: MKL_INT,
+                group_size: *const MKL_INT,
+            ) {
+                unsafe {
+                    sys::$gemv_batch_ptr(
+                        layout, trans_array, m_array, n_array,
+                        alpha_array.cast(),
+                        a_array.cast(), lda_array,
+                        x_array.cast(), incx_array,
+                        beta_array.cast(),
+                        y_array.cast(), incy_array,
+                        group_count, group_size,
+                    )
+                }
+            }
+            #[inline]
+            unsafe fn cblas_trsm_batch(
+                layout: sys::CBLAS_LAYOUT::Type,
+                side_array: *const sys::CBLAS_SIDE::Type,
+                uplo_array: *const sys::CBLAS_UPLO::Type,
+                transa_array: *const sys::CBLAS_TRANSPOSE::Type,
+                diag_array: *const sys::CBLAS_DIAG::Type,
+                m_array: *const MKL_INT,
+                n_array: *const MKL_INT,
+                alpha_array: *const Self,
+                a_array: *mut *const Self,
+                lda_array: *const MKL_INT,
+                b_array: *mut *mut Self,
+                ldb_array: *const MKL_INT,
+                group_count: MKL_INT,
+                group_size: *const MKL_INT,
+            ) {
+                unsafe {
+                    sys::$trsm_batch_ptr(
+                        layout, side_array, uplo_array,
+                        transa_array, diag_array,
+                        m_array, n_array,
+                        alpha_array.cast(),
+                        a_array.cast(), lda_array,
+                        b_array.cast(), ldb_array,
+                        group_count, group_size,
+                    )
+                }
+            }
+            #[inline]
             unsafe fn cblas_trsm_batch_strided(
                 layout: sys::CBLAS_LAYOUT::Type, side: sys::CBLAS_SIDE::Type,
                 uplo: sys::CBLAS_UPLO::Type, trans: sys::CBLAS_TRANSPOSE::Type,
@@ -2531,7 +2693,9 @@ impl_complex_blas!(
     gemv_batch_strided = cblas_cgemv_batch_strided,
     gemm_batch_strided = cblas_cgemm_batch_strided,
     gemm_batch_ptr = cblas_cgemm_batch,
+    gemv_batch_ptr = cblas_cgemv_batch,
     trsm_batch_strided = cblas_ctrsm_batch_strided,
+    trsm_batch_ptr = cblas_ctrsm_batch,
     dgmm_batch_strided = cblas_cdgmm_batch_strided,
 );
 
@@ -2564,6 +2728,8 @@ impl_complex_blas!(
     gemv_batch_strided = cblas_zgemv_batch_strided,
     gemm_batch_strided = cblas_zgemm_batch_strided,
     gemm_batch_ptr = cblas_zgemm_batch,
+    gemv_batch_ptr = cblas_zgemv_batch,
     trsm_batch_strided = cblas_ztrsm_batch_strided,
+    trsm_batch_ptr = cblas_ztrsm_batch,
     dgmm_batch_strided = cblas_zdgmm_batch_strided,
 );

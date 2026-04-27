@@ -542,6 +542,216 @@ pub fn gemm_batch<T: BlasScalar>(
     Ok(())
 }
 
+/// Pointer-array batched GEMV. Performs many GEMVs whose vector
+/// shapes (and `alpha` / `beta`) vary across "groups". See
+/// [`gemm_batch`] for the group-based dispatch model.
+///
+/// # Safety
+///
+/// Each pointer must point to a buffer of the appropriate size for
+/// the operation; lifetimes must extend through the call.
+pub fn gemv_batch<T: BlasScalar>(
+    layout: Layout,
+    groups: &mut [GemvBatchGroup<T>],
+) -> Result<()> {
+    if groups.is_empty() {
+        return Ok(());
+    }
+    for g in groups.iter() {
+        if g.a_array.len() != g.group_size
+            || g.x_array.len() != g.group_size
+            || g.y_array.len() != g.group_size
+        {
+            return Err(Error::InvalidArgument(
+                "a_array / x_array / y_array length must equal group_size",
+            ));
+        }
+    }
+    let group_count = groups.len();
+    let mut trans = Vec::with_capacity(group_count);
+    let mut m_arr = Vec::with_capacity(group_count);
+    let mut n_arr = Vec::with_capacity(group_count);
+    let mut alpha_arr = Vec::with_capacity(group_count);
+    let mut lda_arr = Vec::with_capacity(group_count);
+    let mut incx_arr = Vec::with_capacity(group_count);
+    let mut beta_arr = Vec::with_capacity(group_count);
+    let mut incy_arr = Vec::with_capacity(group_count);
+    let mut group_sz = Vec::with_capacity(group_count);
+
+    let total: usize = groups.iter().map(|g| g.group_size).sum();
+    let mut a_ptrs: Vec<*const T> = Vec::with_capacity(total);
+    let mut x_ptrs: Vec<*const T> = Vec::with_capacity(total);
+    let mut y_ptrs: Vec<*mut T> = Vec::with_capacity(total);
+
+    for g in groups.iter_mut() {
+        trans.push(g.trans.as_cblas());
+        m_arr.push(dim_to_mkl_int(g.m)?);
+        n_arr.push(dim_to_mkl_int(g.n)?);
+        alpha_arr.push(g.alpha);
+        lda_arr.push(dim_to_mkl_int(g.lda)?);
+        incx_arr.push(stride_to_mkl_int(g.incx)?);
+        beta_arr.push(g.beta);
+        incy_arr.push(stride_to_mkl_int(g.incy)?);
+        group_sz.push(dim_to_mkl_int(g.group_size)?);
+        a_ptrs.extend(g.a_array.iter().copied());
+        x_ptrs.extend(g.x_array.iter().copied());
+        y_ptrs.extend(g.y_array.iter().copied());
+    }
+
+    unsafe {
+        T::cblas_gemv_batch(
+            layout.as_cblas(),
+            trans.as_ptr(),
+            m_arr.as_ptr(),
+            n_arr.as_ptr(),
+            alpha_arr.as_ptr(),
+            a_ptrs.as_mut_ptr(),
+            lda_arr.as_ptr(),
+            x_ptrs.as_mut_ptr(),
+            incx_arr.as_ptr(),
+            beta_arr.as_ptr(),
+            y_ptrs.as_mut_ptr(),
+            incy_arr.as_ptr(),
+            dim_to_mkl_int(group_count)?,
+            group_sz.as_ptr(),
+        );
+    }
+    Ok(())
+}
+
+/// Pointer-array batched TRSM. Solves many triangular systems whose
+/// shapes / sides / triangles can vary across groups.
+///
+/// # Safety
+///
+/// Each pointer must point to a buffer of the appropriate size for
+/// the operation; lifetimes must extend through the call. Each `B`
+/// matrix is overwritten with the solution `X`.
+pub fn trsm_batch<T: BlasScalar>(
+    layout: Layout,
+    groups: &mut [TrsmBatchGroup<T>],
+) -> Result<()> {
+    if groups.is_empty() {
+        return Ok(());
+    }
+    for g in groups.iter() {
+        if g.a_array.len() != g.group_size || g.b_array.len() != g.group_size {
+            return Err(Error::InvalidArgument(
+                "a_array / b_array length must equal group_size",
+            ));
+        }
+    }
+    let group_count = groups.len();
+    let mut side = Vec::with_capacity(group_count);
+    let mut uplo = Vec::with_capacity(group_count);
+    let mut transa = Vec::with_capacity(group_count);
+    let mut diag = Vec::with_capacity(group_count);
+    let mut m_arr = Vec::with_capacity(group_count);
+    let mut n_arr = Vec::with_capacity(group_count);
+    let mut alpha_arr = Vec::with_capacity(group_count);
+    let mut lda_arr = Vec::with_capacity(group_count);
+    let mut ldb_arr = Vec::with_capacity(group_count);
+    let mut group_sz = Vec::with_capacity(group_count);
+
+    let total: usize = groups.iter().map(|g| g.group_size).sum();
+    let mut a_ptrs: Vec<*const T> = Vec::with_capacity(total);
+    let mut b_ptrs: Vec<*mut T> = Vec::with_capacity(total);
+
+    for g in groups.iter_mut() {
+        side.push(g.side.as_cblas());
+        uplo.push(g.uplo.as_cblas());
+        transa.push(g.transa.as_cblas());
+        diag.push(g.diag.as_cblas());
+        m_arr.push(dim_to_mkl_int(g.m)?);
+        n_arr.push(dim_to_mkl_int(g.n)?);
+        alpha_arr.push(g.alpha);
+        lda_arr.push(dim_to_mkl_int(g.lda)?);
+        ldb_arr.push(dim_to_mkl_int(g.ldb)?);
+        group_sz.push(dim_to_mkl_int(g.group_size)?);
+        a_ptrs.extend(g.a_array.iter().copied());
+        b_ptrs.extend(g.b_array.iter().copied());
+    }
+
+    unsafe {
+        T::cblas_trsm_batch(
+            layout.as_cblas(),
+            side.as_ptr(),
+            uplo.as_ptr(),
+            transa.as_ptr(),
+            diag.as_ptr(),
+            m_arr.as_ptr(),
+            n_arr.as_ptr(),
+            alpha_arr.as_ptr(),
+            a_ptrs.as_mut_ptr(),
+            lda_arr.as_ptr(),
+            b_ptrs.as_mut_ptr(),
+            ldb_arr.as_ptr(),
+            dim_to_mkl_int(group_count)?,
+            group_sz.as_ptr(),
+        );
+    }
+    Ok(())
+}
+
+/// One group of uniform GEMVs for [`gemv_batch`].
+#[derive(Debug)]
+pub struct GemvBatchGroup<'a, T: BlasScalar> {
+    /// Transpose flag for `A`.
+    pub trans: Transpose,
+    /// Number of rows of `A`.
+    pub m: usize,
+    /// Number of columns of `A`.
+    pub n: usize,
+    /// Scaling factor for `op(A) * x`.
+    pub alpha: T,
+    /// Leading dimension of each `A`.
+    pub lda: usize,
+    /// Stride between consecutive elements of each `x`.
+    pub incx: i64,
+    /// Scaling factor for `y`.
+    pub beta: T,
+    /// Stride between consecutive elements of each `y`.
+    pub incy: i64,
+    /// Number of GEMVs in this group.
+    pub group_size: usize,
+    /// `A` matrix pointers, one per GEMV.
+    pub a_array: &'a [*const T],
+    /// `x` vector pointers.
+    pub x_array: &'a [*const T],
+    /// `y` vector pointers (mutable).
+    pub y_array: &'a [*mut T],
+}
+
+/// One group of uniform TRSMs for [`trsm_batch`]. All TRSMs in this
+/// group share side / uplo / trans / diag / dimensions / `alpha`.
+#[derive(Debug)]
+pub struct TrsmBatchGroup<'a, T: BlasScalar> {
+    /// Whether `op(A)` appears on the left or right.
+    pub side: Side,
+    /// Which triangle of `A` to use.
+    pub uplo: UpLo,
+    /// Transpose flag for `A`.
+    pub transa: Transpose,
+    /// Whether `A` has a unit diagonal.
+    pub diag: Diag,
+    /// Number of rows of `B`.
+    pub m: usize,
+    /// Number of columns of `B`.
+    pub n: usize,
+    /// Scaling factor.
+    pub alpha: T,
+    /// Leading dimension of each `A`.
+    pub lda: usize,
+    /// Leading dimension of each `B`.
+    pub ldb: usize,
+    /// Number of TRSMs in this group.
+    pub group_size: usize,
+    /// `A` matrix pointers.
+    pub a_array: &'a [*const T],
+    /// `B` matrix pointers (mutable; overwritten with the solution `X`).
+    pub b_array: &'a [*mut T],
+}
+
 /// One group of uniform GEMMs for [`gemm_batch`]. All GEMMs in this
 /// group share the transposes, dimensions, and scaling factors.
 #[derive(Debug)]
