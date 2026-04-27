@@ -536,6 +536,80 @@ fn path_to_cstring(p: &Path) -> Result<CString> {
     CString::new(s).map_err(|_| Error::InvalidArgument("path contains a null byte"))
 }
 
+/// Low-level safe wrapper over `pardiso_64`, the always-64-bit
+/// interface variant. Useful for problems whose dimensions exceed
+/// 2³¹ when MKL was built against the LP64 interface (the 32-bit
+/// `pardiso` cannot accept indices that large).
+///
+/// Unlike the high-level [`Pardiso`] wrapper, this function exposes
+/// the raw phase machine: callers manage the `pt` handle and `iparm`
+/// state themselves and call this for each phase (analyze, factorize,
+/// solve, free) following oneMKL's conventions.
+///
+/// `pt` must be zero-initialized before the first call. `iparm` must
+/// be initialized before phase 11 — typically by calling `pardisoinit`
+/// (whose 32-bit output is then sign-extended to 64-bit) or by
+/// zero-initializing and relying on PARDISO's per-phase defaults.
+///
+/// `b` may be empty for phases that do not solve (e.g. analyze,
+/// factorize, free); `x` similarly.
+#[allow(clippy::too_many_arguments)]
+pub fn pardiso_64_raw<T: PardisoScalar>(
+    pt: &mut [*mut core::ffi::c_void; 64],
+    maxfct: i64,
+    mnum: i64,
+    mtype: i64,
+    phase: i64,
+    n: i64,
+    a: &[T],
+    ia: &[i64],
+    ja: &[i64],
+    perm: Option<&mut [i64]>,
+    nrhs: i64,
+    iparm: &mut [i64; 64],
+    msglvl: i64,
+    b: &[T],
+    x: &mut [T],
+) -> Result<()> {
+    let mtype_is_complex = matches!(mtype, 3 | 4 | -4 | 6 | 13);
+    if mtype_is_complex != T::IS_COMPLEX {
+        return Err(Error::InvalidArgument(
+            "scalar type and matrix type disagree on real-vs-complex",
+        ));
+    }
+    let perm_ptr: *mut i64 = match perm {
+        Some(p) => p.as_mut_ptr(),
+        None => ptr::null_mut(),
+    };
+    let mut error: i64 = 0;
+    unsafe {
+        sys::pardiso_64(
+            pt.as_mut_ptr() as sys::_MKL_DSS_HANDLE_t,
+            &maxfct,
+            &mnum,
+            &mtype,
+            &phase,
+            &n,
+            a.as_ptr().cast(),
+            ia.as_ptr(),
+            ja.as_ptr(),
+            perm_ptr,
+            &nrhs,
+            iparm.as_mut_ptr(),
+            &msglvl,
+            b.as_ptr() as *mut core::ffi::c_void,
+            x.as_mut_ptr().cast(),
+            &mut error,
+        );
+    }
+    if error != 0 {
+        // Truncate to c_int for the unified PardisoStatus error type;
+        // PARDISO error codes are small and fit in i32.
+        return Err(Error::PardisoStatus(error as c_int));
+    }
+    Ok(())
+}
+
 impl<T> Drop for Pardiso<T> {
     fn drop(&mut self) {
         if !self.initialized {

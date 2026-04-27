@@ -4,7 +4,7 @@
 
 use approx::assert_abs_diff_eq;
 
-use onemkl::pardiso::{IndexBase, Pardiso, PardisoMatrixType};
+use onemkl::pardiso::{pardiso_64_raw, IndexBase, Pardiso, PardisoMatrixType};
 
 #[test]
 fn solve_real_spd_3x3() {
@@ -168,6 +168,62 @@ fn get_diagonal_returns_da_match() {
 fn get_diagonal_before_factorize_errors() {
     let mut solver = Pardiso::<f64>::new(PardisoMatrixType::RealSpd);
     assert!(solver.get_diagonal(3).is_err());
+}
+
+#[test]
+fn pardiso_64_raw_solves_3x3_spd() {
+    // Same SPD test problem as solve_real_spd_3x3 but driven through
+    // the always-64-bit pardiso_64 interface.
+    let ia = vec![1_i64, 3, 5, 6];
+    let ja = vec![1_i64, 2, 2, 3, 3];
+    let a = vec![4.0_f64, -1.0, 4.0, -1.0, 4.0];
+    let b = vec![3.0_f64, 2.0, 3.0];
+    let mut x = vec![0.0_f64; 3];
+
+    let mut pt: [*mut core::ffi::c_void; 64] = [core::ptr::null_mut(); 64];
+    let mut iparm: [i64; 64] = [0; 64];
+    // iparm[0] = 0 tells PARDISO to populate the rest with defaults.
+    // iparm[34] = 0 selects 1-based indexing.
+    let mtype: i64 = 2; // RealSpd
+    let no_b: [f64; 0] = [];
+    let mut no_x: [f64; 0] = [];
+
+    // Phase 13 = analyze + factorize + solve.
+    pardiso_64_raw::<f64>(
+        &mut pt, 1, 1, mtype, 13, 3,
+        &a, &ia, &ja, None, 1, &mut iparm, 0,
+        &b, &mut x,
+    )
+    .unwrap();
+    assert_abs_diff_eq!(x[0], 1.0, epsilon = 1e-10);
+    assert_abs_diff_eq!(x[1], 1.0, epsilon = 1e-10);
+    assert_abs_diff_eq!(x[2], 1.0, epsilon = 1e-10);
+
+    // Phase -1 = release all internal memory.
+    pardiso_64_raw::<f64>(
+        &mut pt, 1, 1, mtype, -1, 3,
+        &a, &ia, &ja, None, 0, &mut iparm, 0,
+        &no_b, &mut no_x,
+    )
+    .unwrap();
+}
+
+#[test]
+fn pardiso_64_raw_rejects_complex_real_mismatch() {
+    // mtype = 13 is ComplexUnsym, but we pass T = f64 which is real.
+    let ia = vec![1_i64, 2];
+    let ja = vec![1_i64];
+    let a = vec![1.0_f64];
+    let b = vec![1.0_f64];
+    let mut x = vec![0.0_f64];
+    let mut pt: [*mut core::ffi::c_void; 64] = [core::ptr::null_mut(); 64];
+    let mut iparm: [i64; 64] = [0; 64];
+    let r = pardiso_64_raw::<f64>(
+        &mut pt, 1, 1, 13, 13, 1,
+        &a, &ia, &ja, None, 1, &mut iparm, 0,
+        &b, &mut x,
+    );
+    assert!(r.is_err());
 }
 
 #[test]
