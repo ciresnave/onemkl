@@ -22,6 +22,8 @@ use onemkl_sys::{self as sys, VSLStreamStatePtr};
 use crate::error::{Error, Result};
 use crate::util::dim_to_mkl_int;
 
+pub mod convolution;
+
 /// Basic random number generators supported by oneMKL VSL.
 ///
 /// Pick one for [`Stream::new`]. Most users want

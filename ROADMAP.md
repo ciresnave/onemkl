@@ -37,7 +37,7 @@ function(s).
 | Preconditioners | MVP | ILU0, ILUT |
 | FEAST | Common | Dense / CSR / banded standard problems; dense generalized problem; real + complex; RCI still TODO |
 | VM (Vector Math) | Common | All major function families |
-| RNG (VSL) | MVP | RAII `Stream` + 8 continuous + 4 discrete distributions |
+| RNG (VSL) | MVP+ | RAII `Stream` + 8 continuous + 4 discrete distributions; 1-D convolution / correlation tasks |
 | FFT (DFTI) | MVP+ | 1-D / 2-D / 3-D / N-D complex; real-input (CCE) variants |
 | Data fitting | MVP | Natural cubic spline |
 | Optimization | MVP | TRNLS, TRNLSPBC, numerical Jacobian |
@@ -82,9 +82,11 @@ Move every domain currently at MVP up to Common. Specifically:
   `gen_eigh_real_dense` / `gen_eigh_complex_dense`); CSR
   generalized (`?feast_scsrgv` / `?feast_hcsrgv`); banded
   generalized (`?feast_sbgv` / `?feast_hbgv`); RCI variants.
-- **RNG**: convolution and correlation tasks (VSL_*Conv*, VSL_*Corr*),
-  summary statistics (mean/variance/covariance/order statistics),
-  remaining BRNGs and method codes.
+- **RNG**: ~~convolution and correlation tasks (VSL_*Conv*,
+  VSL_*Corr*)~~ (done — `Conv1d` / `Corr1d` plus `convolve_1d` /
+  `correlate_1d` free functions); summary statistics
+  (mean/variance/covariance/order statistics); remaining BRNGs and
+  method codes.
 - **FFT**: multi-dimensional, real-input variants, configurable
   scaling and storage formats.
 - **Data fitting**: Hermite, Bessel, Akima, lookup / linear /
