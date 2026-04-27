@@ -40,7 +40,7 @@ function(s).
 | RNG (VSL) | Common | RAII `Stream` + 8 continuous + 4 discrete distributions; 1-D convolution / correlation tasks; summary statistics (mean / variance / min / max / sum) |
 | FFT (DFTI) | Common | 1-D / 2-D / 3-D / N-D complex; real-input (CCE) variants; configurable forward / backward scaling |
 | Data fitting | Common | Natural / Bessel / Akima / Hermite cubic splines, with interpolate / integrate |
-| Optimization | MVP | TRNLS, TRNLSPBC, numerical Jacobian |
+| Optimization | Common | TRNLS, TRNLSPBC with initial / final residual norms; RCI numerical Jacobian; low-level `djacobi_with_callback` direct-FFI Jacobian |
 | Service | Common | Version, threading, memory, verbose, finalize |
 
 170 tests pass workspace-wide; each test maps directly to a wrapped
@@ -128,8 +128,11 @@ account for the vast majority of downstream use:
 Push all remaining MVP domains to Common+ and start filling in the
 specialized ones:
 
-- **Optimization**: full RCI surface (`?trnlsp_check`, `?trnlsp_get`
-  with all return shapes), `?jacobi`/`?jacobix` direct callers.
+- **Optimization**: ~~`?trnlsp_get` with full return shape (initial /
+  final residual norms), `?jacobi` direct caller~~ (done — residual
+  norms in `TrnlsResult`, `djacobi_with_callback`); `?trnlsp_check`
+  validation (currently subsumed by `_init`), `?jacobix` (Jacobian
+  with central differences), session API for step-by-step driving.
 - **Service**: CBWR (`mkl_cbwr_*`), `mkl_set_progress`,
   `mkl_set_xerbla`, `mkl_set_pardiso_pivot`,
   `mkl_enable_instructions`, single-dynamic-library control.

@@ -50,13 +50,19 @@ impl Default for TrnlsOptions {
 }
 
 /// Outcome of a successful TRNLS solve.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TrnlsResult {
     /// Number of outer iterations performed.
     pub iterations: i32,
     /// Stopping criterion code (`st_cr` from `dtrnlsp_get`).
     /// Mirrors oneMKL's six-valued enumeration.
     pub stopping_criterion: i32,
+    /// `‖F(x₀)‖₂` — Euclidean norm of the residual at the initial
+    /// guess.
+    pub initial_residual_norm: f64,
+    /// `‖F(x*)‖₂` — Euclidean norm of the residual at the returned
+    /// solution.
+    pub final_residual_norm: f64,
 }
 
 /// Unconstrained trust-region NLLS solver.
@@ -144,6 +150,8 @@ where
         Ok(TrnlsResult {
             iterations: iters,
             stopping_criterion: st_cr,
+            initial_residual_norm: r1,
+            final_residual_norm: r2,
         })
     })();
 
@@ -237,6 +245,8 @@ where
         Ok(TrnlsResult {
             iterations: iters,
             stopping_criterion: st_cr,
+            initial_residual_norm: r1,
+            final_residual_norm: r2,
         })
     })();
 
@@ -325,4 +335,66 @@ where
         let _ = sys::djacobi_delete(&mut handle);
     }
     result
+}
+
+/// Function-pointer type for the direct-callback form of [`djacobi`].
+/// MKL invokes this once per Jacobian column, passing pointers to
+/// dimensions, the perturbed `x`, and the output residual.
+pub type DjacobiCallback = unsafe extern "C" fn(
+    n: *mut core::ffi::c_int,
+    m: *mut core::ffi::c_int,
+    x: *mut f64,
+    f: *mut f64,
+);
+
+/// Compute a numerical Jacobian using oneMKL's direct-callback form
+/// (`djacobi`). Unlike [`numerical_jacobian`], which drives MKL's
+/// reverse-communication interface from a Rust closure, this variant
+/// accepts a raw `extern "C"` function pointer that MKL calls
+/// internally — useful when the residual is implemented in C / C++ /
+/// Fortran or already exposed as an FFI-compatible function.
+///
+/// `jac` must be at least `m * n` elements (column-major). `step` is
+/// the perturbation size for forward-difference Jacobian estimation.
+///
+/// # Safety
+///
+/// `fcn` must remain valid for the duration of this call and must
+/// not unwind across the FFI boundary.
+pub unsafe fn djacobi_with_callback(
+    n: usize,
+    m: usize,
+    x: &[f64],
+    step: f64,
+    jac: &mut [f64],
+    fcn: DjacobiCallback,
+) -> Result<()> {
+    if x.len() != n {
+        return Err(Error::InvalidArgument("x must have length n"));
+    }
+    if jac.len() < m * n {
+        return Err(Error::InvalidArgument(
+            "jac buffer is smaller than m * n",
+        ));
+    }
+    let n_i: c_int = n.try_into().map_err(|_| Error::DimensionOverflow)?;
+    let m_i: c_int = m.try_into().map_err(|_| Error::DimensionOverflow)?;
+    // sys::djacobi takes the ptrs to x and jac as *mut even though
+    // it does not modify x's logical contents (just temporarily
+    // perturbs each element and restores it).
+    let mut step_mut = step;
+    let status = unsafe {
+        sys::djacobi(
+            Some(fcn),
+            &n_i,
+            &m_i,
+            jac.as_mut_ptr(),
+            x.as_ptr() as *mut f64,
+            &mut step_mut,
+        )
+    };
+    if status != sys::TR_SUCCESS as c_int {
+        return Err(Error::LapackComputationFailure { info: status });
+    }
+    Ok(())
 }

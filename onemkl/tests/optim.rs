@@ -4,7 +4,9 @@
 
 use approx::assert_abs_diff_eq;
 
-use onemkl::optim::{solve_trnls, solve_trnls_bounded, TrnlsOptions};
+use onemkl::optim::{
+    djacobi_with_callback, solve_trnls, solve_trnls_bounded, TrnlsOptions,
+};
 
 #[test]
 fn fits_a_line_through_two_points() {
@@ -33,6 +35,10 @@ fn fits_a_line_through_two_points() {
     assert!(result.iterations > 0);
     assert_abs_diff_eq!(params[0], 1.0, epsilon = 1e-6);
     assert_abs_diff_eq!(params[1], 1.0, epsilon = 1e-6);
+    // initial residual at [0, 0] = sqrt(2² + 3²) = sqrt(13) ≈ 3.606.
+    assert_abs_diff_eq!(result.initial_residual_norm, 13.0_f64.sqrt(), epsilon = 1e-6);
+    // final residual at the optimum should be ~0.
+    assert!(result.final_residual_norm < 1e-6);
 }
 
 #[test]
@@ -62,6 +68,53 @@ fn fits_quadratic_to_three_points() {
     assert_abs_diff_eq!(params[0], 1.0, epsilon = 1e-6);
     assert_abs_diff_eq!(params[1], 0.0, epsilon = 1e-6);
     assert_abs_diff_eq!(params[2], 1.0, epsilon = 1e-6);
+}
+
+// F(x) = [x[0]² + x[1], x[0] - x[1]²]; analytic Jacobian at any x is
+//   J = [[2*x[0], 1], [1, -2*x[1]]]
+// Stored column-major in MKL: [2*x[0], 1, 1, -2*x[1]].
+unsafe extern "C" fn nonlinear_residual_for_jacobi(
+    n: *mut core::ffi::c_int,
+    m: *mut core::ffi::c_int,
+    x: *mut f64,
+    f: *mut f64,
+) {
+    unsafe {
+        debug_assert_eq!(*n, 2);
+        debug_assert_eq!(*m, 2);
+        let x_slice = core::slice::from_raw_parts(x, 2);
+        let f_slice = core::slice::from_raw_parts_mut(f, 2);
+        f_slice[0] = x_slice[0] * x_slice[0] + x_slice[1];
+        f_slice[1] = x_slice[0] - x_slice[1] * x_slice[1];
+    }
+}
+
+#[test]
+fn djacobi_direct_callback_matches_analytic_jacobian() {
+    let x = vec![1.5_f64, 0.7];
+    let mut jac = vec![0.0_f64; 4];
+    unsafe {
+        djacobi_with_callback(2, 2, &x, 1e-6, &mut jac, nonlinear_residual_for_jacobi)
+            .unwrap();
+    }
+    // Compare to analytic Jacobian at (1.5, 0.7):
+    //   [[2*1.5,    1   ],
+    //    [    1, -2*0.7 ]]
+    // Column-major: [3.0, 1.0, 1.0, -1.4].
+    assert_abs_diff_eq!(jac[0], 3.0, epsilon = 1e-3);
+    assert_abs_diff_eq!(jac[1], 1.0, epsilon = 1e-3);
+    assert_abs_diff_eq!(jac[2], 1.0, epsilon = 1e-3);
+    assert_abs_diff_eq!(jac[3], -1.4, epsilon = 1e-3);
+}
+
+#[test]
+fn djacobi_rejects_undersized_jac() {
+    let x = vec![1.0_f64, 1.0];
+    let mut jac = vec![0.0_f64; 2]; // need 4
+    let r = unsafe {
+        djacobi_with_callback(2, 2, &x, 1e-6, &mut jac, nonlinear_residual_for_jacobi)
+    };
+    assert!(r.is_err());
 }
 
 #[test]
