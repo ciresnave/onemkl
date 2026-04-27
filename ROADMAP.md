@@ -31,7 +31,7 @@ function(s).
 | BLAS-like extensions | Common | `axpby`, `imatcopy`/`omatcopy`/`omatcopy2`/`omatadd`, batched (strided) `gemm`/`trsm`/`gemv`/`dgmm`/`axpy`/`copy`/`gemm3m`; pointer-array `gemm_batch` / `gemv_batch` / `trsm_batch` |
 | LAPACK | Common | Linear solve, QR, LS, eigenvalue (incl. RRR + D&C), SVD, banded, packed, generalized |
 | Sparse BLAS (IE) | Common | CSR / COO / CSC / BSR construction; `mv`/`mm`/`trsv`/`optimize` + Sparse QR factor / solve; copy / convert / order / mv-mm-sv hint setters |
-| PARDISO | MVP+ | Factor + solve, multi-RHS, cached factorization, diagonal extraction, save/restore handle, low-level `export`, user `perm` |
+| PARDISO | Common | Factor + solve, multi-RHS, cached factorization, diagonal extraction, save/restore handle, low-level `export`, user `perm`, `pardiso_64_raw`, custom pivot callback |
 | DSS | Common | Real + complex (single + double precision) factor / solve, multi-RHS, statistics (timing / memory / determinant / inertia) |
 | ISS (CG, FGMRES) | Common | Closure-driven mat-vec; preconditioned CG; `IssResult` with iterations / residual norms / stop reason; full RCI surface via `CgSession` / `FgmresSession` |
 | Preconditioners | Common | ILU0, ILUT, plus `apply_ilu` for two-step triangular solve. ILU0 / ILUT are MKL's only RCI preconditioners — no SSOR / Jacobi / Chebyshev exposed. |
@@ -68,12 +68,14 @@ Move every domain currently at MVP up to Common. Specifically:
   setters (`mkl_sparse_set_mv_hint`, etc.)~~ (done — `copy`,
   `convert_{csr,csc,coo,bsr}`, `order`, `set_{mv,mm,sv}_hint`).
 - **PARDISO**: ~~`pardiso_getdiag`, save/restore handle pair,
-  `pardiso_export`, `perm` parameter~~ (done — `with_diagonal_enabled`
-  / `get_diagonal`, `save_handle` / `load_handle` /
-  `delete_handle_files`, low-level `export`, `set_perm` / `perm`).
-  Schur extraction via `export` is wired but the exact MKL call
-  sequence still needs to be nailed down (currently crashes inside
-  MKL). `pardiso_64`, `mkl_pardiso_pivot` remain.
+  `pardiso_export`, `perm` parameter, `pardiso_64`,
+  `mkl_pardiso_pivot`~~ (all done — `with_diagonal_enabled` /
+  `get_diagonal`, `save_handle` / `load_handle` /
+  `delete_handle_files`, low-level `export`, `set_perm` / `perm`,
+  `pardiso_64_raw`, `set_pardiso_pivot_callback`). The Schur
+  extraction call sequence via `export` still needs to be nailed
+  down (currently crashes inside MKL). High-level `Pardiso64<T>`
+  state-managed wrapper and Schur fix remain as polish.
 - **DSS**: ~~complex matrices, statistics readout~~ (done — complex
   factor/solve already covered, plus `factor_time` / `peak_memory_kb`
   / `determinant` / `inertia` etc.); generalized symmetric options.

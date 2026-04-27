@@ -536,6 +536,39 @@ fn path_to_cstring(p: &Path) -> Result<CString> {
     CString::new(s).map_err(|_| Error::InvalidArgument("path contains a null byte"))
 }
 
+/// Function-pointer type for a custom PARDISO pivot callback. The
+/// callback is invoked once per pivot during factorization; arguments
+/// are pointers to the pivot value (`aii`), the off-diagonal scaling
+/// (`bii`), and the threshold (`eps`). Return `0` to apply MKL's
+/// default pivot logic, or non-zero to skip MKL's adjustment and use
+/// the values the callback wrote.
+pub type PardisoPivotCallback = unsafe extern "C" fn(
+    aii: *mut f64,
+    bii: *mut f64,
+    eps: *mut f64,
+) -> core::ffi::c_int;
+
+/// Install a custom pivot-handling callback for subsequent PARDISO
+/// factorizations. Pass `None` to clear the current callback and
+/// restore MKL's default behavior. Returns the previously-installed
+/// callback, if any.
+///
+/// # Safety
+///
+/// - The callback must remain valid (its function pointer cannot be
+///   invalidated) for the entire duration of any PARDISO factorization
+///   that runs after this call.
+/// - The callback is process-global: there is exactly one slot
+///   shared by every PARDISO instance in the process. Multi-threaded
+///   programs must externally synchronize installation.
+/// - The callback runs inside MKL's factorization phase and may be
+///   called concurrently from multiple PARDISO worker threads.
+pub unsafe fn set_pardiso_pivot_callback(
+    callback: Option<PardisoPivotCallback>,
+) -> Option<PardisoPivotCallback> {
+    unsafe { sys::mkl_set_pardiso_pivot(callback) }
+}
+
 /// Low-level safe wrapper over `pardiso_64`, the always-64-bit
 /// interface variant. Useful for problems whose dimensions exceed
 /// 2³¹ when MKL was built against the LP64 interface (the 32-bit

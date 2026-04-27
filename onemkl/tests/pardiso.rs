@@ -4,7 +4,9 @@
 
 use approx::assert_abs_diff_eq;
 
-use onemkl::pardiso::{pardiso_64_raw, IndexBase, Pardiso, PardisoMatrixType};
+use onemkl::pardiso::{
+    pardiso_64_raw, set_pardiso_pivot_callback, IndexBase, Pardiso, PardisoMatrixType,
+};
 
 #[test]
 fn solve_real_spd_3x3() {
@@ -168,6 +170,46 @@ fn get_diagonal_returns_da_match() {
 fn get_diagonal_before_factorize_errors() {
     let mut solver = Pardiso::<f64>::new(PardisoMatrixType::RealSpd);
     assert!(solver.get_diagonal(3).is_err());
+}
+
+unsafe extern "C" fn passthrough_pivot(
+    _aii: *mut f64,
+    _bii: *mut f64,
+    _eps: *mut f64,
+) -> core::ffi::c_int {
+    // Return 0 so MKL applies its default pivot adjustment.
+    0
+}
+
+#[test]
+fn pardiso_pivot_callback_install_and_solve() {
+    // Install a passthrough pivot callback, run a normal SPD solve,
+    // and confirm both that the callback installation succeeds and
+    // that the solve still produces the right answer. Clear the
+    // callback at the end so it doesn't leak into other tests in
+    // this binary.
+    let prev = unsafe { set_pardiso_pivot_callback(Some(passthrough_pivot)) };
+    // Don't make assertions on `prev` — its value depends on test
+    // ordering and global state.
+    let _ = prev;
+
+    let ia = vec![1_i32, 3, 5, 6];
+    let ja = vec![1_i32, 2, 2, 3, 3];
+    let a = vec![4.0_f64, -1.0, 4.0, -1.0, 4.0];
+    let b = vec![3.0_f64, 2.0, 3.0];
+    let mut x = vec![0.0_f64; 3];
+
+    let mut solver = Pardiso::<f64>::new(PardisoMatrixType::RealSpd)
+        .with_indexing(IndexBase::One);
+    solver.solve(3, &a, &ia, &ja, &b, &mut x).unwrap();
+    assert_abs_diff_eq!(x[0], 1.0, epsilon = 1e-10);
+    assert_abs_diff_eq!(x[1], 1.0, epsilon = 1e-10);
+    assert_abs_diff_eq!(x[2], 1.0, epsilon = 1e-10);
+
+    // Clear the callback to restore default behavior.
+    unsafe {
+        let _ = set_pardiso_pivot_callback(None);
+    }
 }
 
 #[test]
