@@ -3,3 +3,5 @@
 /onemkl_p*-*.txt
 # Vendor reference PDF — freely downloadable from Intel; excluded to keep clones small.
 /onemkl_developer-reference-c_*.pdf
+# Coverage instrumentation byproducts.
+*.profraw
