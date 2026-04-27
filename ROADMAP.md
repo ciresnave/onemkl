@@ -35,7 +35,7 @@ function(s).
 | DSS | Common | Real + complex (single + double precision) factor / solve, multi-RHS, statistics (timing / memory / determinant / inertia) |
 | ISS (CG, FGMRES) | MVP+ | Closure-driven mat-vec; preconditioned CG; `IssResult` with iterations / residual norms / stop reason |
 | Preconditioners | MVP | ILU0, ILUT |
-| FEAST | MVP | Dense symmetric / Hermitian; CSR / banded / generalized / RCI still TODO |
+| FEAST | Common | Dense / CSR / banded standard problems; dense generalized problem; real + complex; RCI still TODO |
 | VM (Vector Math) | Common | All major function families |
 | RNG (VSL) | MVP | RAII `Stream` + 8 continuous + 4 discrete distributions |
 | FFT (DFTI) | MVP+ | 1-D / 2-D / 3-D / N-D complex; real-input (CCE) variants |
@@ -75,9 +75,13 @@ Move every domain currently at MVP up to Common. Specifically:
   `IssResult { iterations, initial_residual_norm,
   final_residual_norm, stop_reason }`); full RCI surface for users who
   want to drive their own loop.
-- **FEAST**: CSR-input drivers (`?feast_scsrev`, `?feast_hcsrev`),
-  banded (`?feast_sbev`, `?feast_hbev`), generalized
-  (`?feast_sygv`/`?feast_hegv`/`?feast_hcsrgv`).
+- **FEAST**: ~~CSR-input drivers (`?feast_scsrev`, `?feast_hcsrev`),
+  banded (`?feast_sbev`, `?feast_hbev`), dense generalized
+  (`?feast_sygv` / `?feast_hegv`)~~ (done — `eigh_real_csr` /
+  `eigh_complex_csr` / `eigh_real_banded` / `eigh_complex_banded` /
+  `gen_eigh_real_dense` / `gen_eigh_complex_dense`); CSR
+  generalized (`?feast_scsrgv` / `?feast_hcsrgv`); banded
+  generalized (`?feast_sbgv` / `?feast_hbgv`); RCI variants.
 - **RNG**: convolution and correlation tasks (VSL_*Conv*, VSL_*Corr*),
   summary statistics (mean/variance/covariance/order statistics),
   remaining BRNGs and method codes.
