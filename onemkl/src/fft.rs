@@ -55,12 +55,25 @@ impl FftPrecision {
 pub trait FftScalar: Copy + 'static {
     /// DFTI precision code corresponding to this real type.
     const PRECISION: FftPrecision;
+    /// Convert to `f64` for variadic FFI calls. DFTI's variadic
+    /// `DftiSetValue` reads the value with `va_arg(ap, double)`
+    /// regardless of descriptor precision, then converts internally
+    /// — so callers must pass `double` even for `DFTI_SINGLE`.
+    fn to_f64(self) -> f64;
 }
 impl FftScalar for f32 {
     const PRECISION: FftPrecision = FftPrecision::Single;
+    #[inline]
+    fn to_f64(self) -> f64 {
+        self as f64
+    }
 }
 impl FftScalar for f64 {
     const PRECISION: FftPrecision = FftPrecision::Double;
+    #[inline]
+    fn to_f64(self) -> f64 {
+        self
+    }
 }
 
 // =====================================================================
@@ -77,9 +90,38 @@ fn check_dfti(status: c_long) -> Result<()> {
 }
 
 #[inline]
+fn apply_scales<T: FftScalar>(
+    handle: DFTI_DESCRIPTOR_HANDLE,
+    scales: Option<(T, T)>,
+) -> Result<()> {
+    if let Some((forward, backward)) = scales {
+        // DFTI's variadic interface reads scales as `double`
+        // regardless of descriptor precision, so cast f32 → f64.
+        let status = unsafe {
+            sys::DftiSetValue(
+                handle,
+                sys::DFTI_CONFIG_PARAM::DFTI_FORWARD_SCALE,
+                forward.to_f64(),
+            )
+        };
+        check_dfti(status)?;
+        let status = unsafe {
+            sys::DftiSetValue(
+                handle,
+                sys::DFTI_CONFIG_PARAM::DFTI_BACKWARD_SCALE,
+                backward.to_f64(),
+            )
+        };
+        check_dfti(status)?;
+    }
+    Ok(())
+}
+
+#[inline]
 fn create_complex_descriptor<T: FftScalar>(
     dims: &[usize],
     placement: sys::DFTI_CONFIG_VALUE::Type,
+    scales: Option<(T, T)>,
 ) -> Result<DFTI_DESCRIPTOR_HANDLE> {
     if dims.is_empty() {
         return Err(Error::InvalidArgument(
@@ -129,6 +171,14 @@ fn create_complex_descriptor<T: FftScalar>(
         return Err(e);
     }
 
+    if let Err(e) = apply_scales(handle, scales) {
+        unsafe {
+            let mut h = handle;
+            let _ = sys::DftiFreeDescriptor(&mut h);
+        }
+        return Err(e);
+    }
+
     let status = unsafe { sys::DftiCommitDescriptor(handle) };
     if let Err(e) = check_dfti(status) {
         unsafe {
@@ -144,6 +194,7 @@ fn create_complex_descriptor<T: FftScalar>(
 fn create_real_descriptor<T: FftScalar>(
     dims: &[usize],
     placement: sys::DFTI_CONFIG_VALUE::Type,
+    scales: Option<(T, T)>,
 ) -> Result<DFTI_DESCRIPTOR_HANDLE> {
     if dims.is_empty() {
         return Err(Error::InvalidArgument(
@@ -270,6 +321,14 @@ fn create_real_descriptor<T: FftScalar>(
         return Err(e);
     }
 
+    if let Err(e) = apply_scales(handle, scales) {
+        unsafe {
+            let mut h = handle;
+            let _ = sys::DftiFreeDescriptor(&mut h);
+        }
+        return Err(e);
+    }
+
     let status = unsafe { sys::DftiCommitDescriptor(handle) };
     if let Err(e) = check_dfti(status) {
         unsafe {
@@ -323,6 +382,29 @@ impl<T: FftScalar> FftPlan<T> {
         let handle = create_complex_descriptor::<T>(
             dims,
             sys::DFTI_CONFIG_VALUE::DFTI_INPLACE,
+            None,
+        )?;
+        let total: usize = dims.iter().product();
+        Ok(Self {
+            handle,
+            total_complex_len: total,
+            _marker: PhantomData,
+        })
+    }
+
+    /// N-D in-place plan with explicit forward / backward scales. Set
+    /// `backward_scale = 1.0 / N` (where `N = dims.iter().product()`)
+    /// to make `IFFT(FFT(x)) = x`. Set both to `1.0 / sqrt(N)` for a
+    /// unitary transform pair.
+    pub fn complex_nd_with_scales(
+        dims: &[usize],
+        forward_scale: T,
+        backward_scale: T,
+    ) -> Result<Self> {
+        let handle = create_complex_descriptor::<T>(
+            dims,
+            sys::DFTI_CONFIG_VALUE::DFTI_INPLACE,
+            Some((forward_scale, backward_scale)),
         )?;
         let total: usize = dims.iter().product();
         Ok(Self {
@@ -403,6 +485,28 @@ impl<T: FftScalar> FftPlanOutOfPlace<T> {
         let handle = create_complex_descriptor::<T>(
             dims,
             sys::DFTI_CONFIG_VALUE::DFTI_NOT_INPLACE,
+            None,
+        )?;
+        let total: usize = dims.iter().product();
+        Ok(Self {
+            handle,
+            total_complex_len: total,
+            _marker: PhantomData,
+        })
+    }
+
+    /// N-D out-of-place plan with explicit forward / backward scales.
+    /// See [`FftPlan::complex_nd_with_scales`] for normalization
+    /// guidance.
+    pub fn complex_nd_with_scales(
+        dims: &[usize],
+        forward_scale: T,
+        backward_scale: T,
+    ) -> Result<Self> {
+        let handle = create_complex_descriptor::<T>(
+            dims,
+            sys::DFTI_CONFIG_VALUE::DFTI_NOT_INPLACE,
+            Some((forward_scale, backward_scale)),
         )?;
         let total: usize = dims.iter().product();
         Ok(Self {
@@ -499,9 +603,25 @@ impl<T: FftScalar> RealFftPlan<T> {
     /// CCE storage shrinks the last dimension to
     /// `dims[dims.len() - 1] / 2 + 1` in the complex output.
     pub fn real_nd(dims: &[usize]) -> Result<Self> {
+        Self::real_nd_inner(dims, None)
+    }
+
+    /// N-D real FFT plan with explicit forward / backward scales. See
+    /// [`FftPlan::complex_nd_with_scales`] for normalization
+    /// guidance.
+    pub fn real_nd_with_scales(
+        dims: &[usize],
+        forward_scale: T,
+        backward_scale: T,
+    ) -> Result<Self> {
+        Self::real_nd_inner(dims, Some((forward_scale, backward_scale)))
+    }
+
+    fn real_nd_inner(dims: &[usize], scales: Option<(T, T)>) -> Result<Self> {
         let handle = create_real_descriptor::<T>(
             dims,
             sys::DFTI_CONFIG_VALUE::DFTI_NOT_INPLACE,
+            scales,
         )?;
         let real_total: usize = dims.iter().product();
         let mut complex_dims = dims.to_vec();

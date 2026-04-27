@@ -38,7 +38,7 @@ function(s).
 | FEAST | Common | Dense / CSR / banded standard problems; dense generalized problem; real + complex; RCI still TODO |
 | VM (Vector Math) | Common | All major function families |
 | RNG (VSL) | Common | RAII `Stream` + 8 continuous + 4 discrete distributions; 1-D convolution / correlation tasks; summary statistics (mean / variance / min / max / sum) |
-| FFT (DFTI) | MVP+ | 1-D / 2-D / 3-D / N-D complex; real-input (CCE) variants |
+| FFT (DFTI) | Common | 1-D / 2-D / 3-D / N-D complex; real-input (CCE) variants; configurable forward / backward scaling |
 | Data fitting | Common | Natural / Bessel / Akima / Hermite cubic splines, with interpolate / integrate |
 | Optimization | MVP | TRNLS, TRNLSPBC, numerical Jacobian |
 | Service | Common | Version, threading, memory, verbose, finalize |
@@ -94,8 +94,10 @@ Move every domain currently at MVP up to Common. Specifically:
   (mean/variance)~~ (done — `SummaryStats::{mean, variance, min, max,
   sum}`); covariance / order statistics / quantiles; remaining BRNGs
   and method codes.
-- **FFT**: multi-dimensional, real-input variants, configurable
-  scaling and storage formats.
+- **FFT**: ~~multi-dimensional, real-input variants, configurable
+  scaling~~ (done — `complex_nd` / `real_nd` plus `*_with_scales`
+  constructors); alternate real-input storage formats (CCS, PACK,
+  PERM); per-axis stride / distance config.
 - **Data fitting**: ~~Hermite, Bessel, Akima cubic splines;
   user-supplied derivatives~~ (done — `CubicSpline1d::{bessel,
   akima, hermite}`); lookup / linear / step-function spline types;
