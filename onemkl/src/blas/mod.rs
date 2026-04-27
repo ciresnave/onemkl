@@ -13,6 +13,7 @@
 
 mod scalar;
 
+pub mod compact;
 pub mod extensions;
 pub mod jit;
 pub mod level1;

@@ -119,9 +119,10 @@ account for the vast majority of downstream use:
   `blas::mixed_precision`); ~~JIT GEMM lifecycle~~ (done — `JitGemm<T>`
   in `blas::jit`); ~~packed compute (`cblas_gemm_*_pack`,
   `cblas_gemm_*_compute`)~~ (done — `PackedMatrix<T>` plus
-  `gemm_compute_packed_{a,b}` in `blas::packed`); compact BLAS
-  (`mkl_?gemm_compact`, `mkl_?trsm_compact`, `mkl_?potrf_compact`,
-  etc.).
+  `gemm_compute_packed_{a,b}` in `blas::packed`); ~~compact BLAS
+  GEMM + pack / unpack lifecycle~~ (done — `blas::compact`); other
+  compact kernels (`?trsm_compact`, `?potrf_compact`,
+  `?getrfnp_compact`, `?geqrf_compact`).
 - **LAPACK Comprehensive**: ~~core auxiliary routines (`?lacpy`,
   `?lange`, `?gecon`, `?larfg`, `?laswp`)~~ (done in
   `lapack::{lacpy, lange, gecon, laswp, larfg}`); remaining
