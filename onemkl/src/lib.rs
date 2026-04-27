@@ -71,6 +71,8 @@ pub mod lapack;
 pub mod optim;
 #[cfg(feature = "pardiso")]
 pub mod pardiso;
+#[cfg(feature = "pde")]
+pub mod pde;
 #[cfg(feature = "preconditioners")]
 pub mod preconditioners;
 #[cfg(feature = "rng")]

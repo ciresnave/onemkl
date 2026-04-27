@@ -41,6 +41,7 @@ function(s).
 | FFT (DFTI) | Common | 1-D / 2-D / 3-D / N-D complex; real-input (CCE) variants; configurable forward / backward scaling |
 | Data fitting | Common | Natural / Bessel / Akima / Hermite cubic splines, with interpolate / integrate |
 | Optimization | Common | TRNLS, TRNLSPBC with initial / final residual norms; RCI numerical Jacobian; low-level `djacobi_with_callback` direct-FFI Jacobian |
+| PDE Support | MVP+ | DCT / DST trigonometric transforms (sine, cosine, four staggered variants) for spectral PDE solvers |
 | Service | Common | Version, threading, memory, verbose, finalize |
 
 170 tests pass workspace-wide; each test maps directly to a wrapped
@@ -147,8 +148,10 @@ specialized ones:
 - **Service**: CBWR (`mkl_cbwr_*`), `mkl_set_progress`,
   `mkl_set_xerbla`, `mkl_set_pardiso_pivot`,
   `mkl_enable_instructions`, single-dynamic-library control.
-- **PDE Support**: trigonometric transforms (Cartesian + spherical
-  Poisson solver, sine/cosine/staggered-cosine).
+- **PDE Support**: ~~trigonometric transforms (sine / cosine /
+  staggered)~~ (done — `TrigTransform<T>` in `pde`); Cartesian and
+  spherical Poisson / Helmholtz solvers (`d_helmholtz_2d` /
+  `d_helmholtz_3d`).
 - **Compact BLAS / LAPACK**: full set (`mkl_?gepack_compact`,
   `mkl_?geunpack_compact`, `mkl_?get_size_compact`, `*_potrf`,
   `*_getrfnp`, `*_geqrf`, `*_getrinp`).

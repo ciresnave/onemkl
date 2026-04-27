@@ -31,6 +31,7 @@ default = [
     "lapack",
     "optim",
     "pardiso",
+    "pde",
     "preconditioners",
     "rng",
     "sparse",
@@ -58,6 +59,7 @@ iss = []
 lapack = []
 optim = []
 pardiso = []
+pde = []
 preconditioners = []
 rng = []
 sparse = []
