@@ -100,6 +100,24 @@ pub trait SparseScalar: Scalar {
         x: *const Self,
         y: *mut Self,
     ) -> sparse_status_t::Type;
+
+    unsafe fn sparse_add(
+        op: sparse_operation_t::Type,
+        a: sparse_matrix_t,
+        alpha: Self,
+        b: sparse_matrix_t,
+        c: *mut sparse_matrix_t,
+    ) -> sparse_status_t::Type;
+
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn sparse_spmmd(
+        op: sparse_operation_t::Type,
+        a: sparse_matrix_t,
+        b: sparse_matrix_t,
+        layout: onemkl_sys::sparse_layout_t::Type,
+        c: *mut Self,
+        ldc: c_int,
+    ) -> sparse_status_t::Type;
 }
 
 macro_rules! impl_sparse_real {
@@ -107,6 +125,7 @@ macro_rules! impl_sparse_real {
         create_csr=$create:ident, create_coo=$create_coo:ident,
         create_csc=$create_csc:ident, create_bsr=$create_bsr:ident,
         mv=$mv:ident, mm=$mm:ident, trsv=$trsv:ident,
+        add=$add:ident, spmmd=$spmmd:ident,
     ) => {
         impl SparseScalar for $ty {
             unsafe fn sparse_create_csr(
@@ -193,6 +212,25 @@ macro_rules! impl_sparse_real {
             ) -> sparse_status_t::Type {
                 unsafe { sys::$trsv(op, alpha, a, descr, x, y) }
             }
+            unsafe fn sparse_add(
+                op: sparse_operation_t::Type,
+                a: sparse_matrix_t,
+                alpha: Self,
+                b: sparse_matrix_t,
+                c: *mut sparse_matrix_t,
+            ) -> sparse_status_t::Type {
+                unsafe { sys::$add(op, a, alpha, b, c) }
+            }
+            unsafe fn sparse_spmmd(
+                op: sparse_operation_t::Type,
+                a: sparse_matrix_t,
+                b: sparse_matrix_t,
+                layout: onemkl_sys::sparse_layout_t::Type,
+                c: *mut Self,
+                ldc: c_int,
+            ) -> sparse_status_t::Type {
+                unsafe { sys::$spmmd(op, a, b, layout, c, ldc) }
+            }
         }
     };
 }
@@ -204,6 +242,7 @@ impl_sparse_real!(
     create_csc=mkl_sparse_s_create_csc,
     create_bsr=mkl_sparse_s_create_bsr,
     mv=mkl_sparse_s_mv, mm=mkl_sparse_s_mm, trsv=mkl_sparse_s_trsv,
+    add=mkl_sparse_s_add, spmmd=mkl_sparse_s_spmmd,
 );
 impl_sparse_real!(
     f64,
@@ -212,6 +251,7 @@ impl_sparse_real!(
     create_csc=mkl_sparse_d_create_csc,
     create_bsr=mkl_sparse_d_create_bsr,
     mv=mkl_sparse_d_mv, mm=mkl_sparse_d_mm, trsv=mkl_sparse_d_trsv,
+    add=mkl_sparse_d_add, spmmd=mkl_sparse_d_spmmd,
 );
 
 macro_rules! impl_sparse_complex {
@@ -219,6 +259,7 @@ macro_rules! impl_sparse_complex {
         create_csr=$create:ident, create_coo=$create_coo:ident,
         create_csc=$create_csc:ident, create_bsr=$create_bsr:ident,
         mv=$mv:ident, mm=$mm:ident, trsv=$trsv:ident,
+        add=$add:ident, spmmd=$spmmd:ident,
     ) => {
         impl SparseScalar for $ty {
             unsafe fn sparse_create_csr(
@@ -327,6 +368,27 @@ macro_rules! impl_sparse_complex {
                     )
                 }
             }
+            unsafe fn sparse_add(
+                op: sparse_operation_t::Type,
+                a: sparse_matrix_t,
+                alpha: Self,
+                b: sparse_matrix_t,
+                c: *mut sparse_matrix_t,
+            ) -> sparse_status_t::Type {
+                unsafe {
+                    sys::$add(op, a, core::mem::transmute_copy(&alpha), b, c)
+                }
+            }
+            unsafe fn sparse_spmmd(
+                op: sparse_operation_t::Type,
+                a: sparse_matrix_t,
+                b: sparse_matrix_t,
+                layout: onemkl_sys::sparse_layout_t::Type,
+                c: *mut Self,
+                ldc: c_int,
+            ) -> sparse_status_t::Type {
+                unsafe { sys::$spmmd(op, a, b, layout, c.cast(), ldc) }
+            }
         }
     };
 }
@@ -338,6 +400,7 @@ impl_sparse_complex!(
     create_csc=mkl_sparse_c_create_csc,
     create_bsr=mkl_sparse_c_create_bsr,
     mv=mkl_sparse_c_mv, mm=mkl_sparse_c_mm, trsv=mkl_sparse_c_trsv,
+    add=mkl_sparse_c_add, spmmd=mkl_sparse_c_spmmd,
 );
 impl_sparse_complex!(
     Complex64,
@@ -346,4 +409,5 @@ impl_sparse_complex!(
     create_csc=mkl_sparse_z_create_csc,
     create_bsr=mkl_sparse_z_create_bsr,
     mv=mkl_sparse_z_mv, mm=mkl_sparse_z_mm, trsv=mkl_sparse_z_trsv,
+    add=mkl_sparse_z_add, spmmd=mkl_sparse_z_spmmd,
 );

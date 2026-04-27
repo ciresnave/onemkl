@@ -820,6 +820,87 @@ impl<T: SparseScalar> SparseMatrix<T> {
         check_sparse(status)
     }
 
+    /// `C ← op(self) + alpha · other`, returning a freshly-allocated
+    /// sparse matrix `C` whose storage is owned by MKL. Wraps
+    /// `mkl_sparse_*_add`.
+    pub fn add(
+        &self,
+        op: Operation,
+        alpha: T,
+        other: &Self,
+    ) -> Result<Self> {
+        let mut dest: sparse_matrix_t = ptr::null_mut();
+        let status = unsafe {
+            T::sparse_add(op.as_sys(), self.handle, alpha, other.handle, &mut dest)
+        };
+        check_sparse(status)?;
+        let (rows, cols) = transposed_shape(op, self.rows, self.cols);
+        Ok(Self::new_mkl_owned(dest, rows, cols))
+    }
+
+    /// `C ← op(self) · other` returning a sparse `C`. Wraps
+    /// `mkl_sparse_spmm` (which dispatches generically by scalar
+    /// type).
+    pub fn spmm(&self, op: Operation, other: &Self) -> Result<Self> {
+        // For A * B, result is (rows of op(A)) × (cols of B);
+        // for Aᵀ * B, result is (cols of A) × (cols of B).
+        let result_rows = match op {
+            Operation::NoTrans => self.rows,
+            Operation::Trans | Operation::ConjTrans => self.cols,
+        };
+        let result_cols = other.cols;
+        let mut dest: sparse_matrix_t = ptr::null_mut();
+        let status = unsafe {
+            sys::mkl_sparse_spmm(op.as_sys(), self.handle, other.handle, &mut dest)
+        };
+        check_sparse(status)?;
+        Ok(Self::new_mkl_owned(dest, result_rows, result_cols))
+    }
+
+    /// `C ← op(self) · other` returning a *dense* `C` in the supplied
+    /// layout. Useful when the product is dense even though both
+    /// operands are sparse (e.g. small sparse blocks producing a
+    /// dense head). Wraps `mkl_sparse_*_spmmd`.
+    ///
+    /// `ldc` is the leading dimension of `C` in the chosen layout
+    /// (≥ number of columns for row-major, ≥ number of rows for
+    /// column-major).
+    pub fn spmmd(
+        &self,
+        op: Operation,
+        other: &Self,
+        layout: DenseLayout,
+        ldc: usize,
+    ) -> Result<Vec<T>>
+    where
+        T: Default,
+    {
+        let result_rows = match op {
+            Operation::NoTrans => self.rows,
+            Operation::Trans | Operation::ConjTrans => self.cols,
+        };
+        let result_cols = other.cols;
+        let needed = match layout {
+            DenseLayout::RowMajor => result_rows.saturating_mul(ldc),
+            DenseLayout::ColMajor => result_cols.saturating_mul(ldc),
+        };
+        let ldc_i: core::ffi::c_int =
+            ldc.try_into().map_err(|_| Error::DimensionOverflow)?;
+        let mut out: Vec<T> = (0..needed).map(|_| T::default()).collect();
+        let status = unsafe {
+            T::sparse_spmmd(
+                op.as_sys(),
+                self.handle,
+                other.handle,
+                layout.as_sys(),
+                out.as_mut_ptr(),
+                ldc_i,
+            )
+        };
+        check_sparse(status)?;
+        Ok(out)
+    }
+
     /// Build a [`SparseMatrix`] around an MKL handle whose internal
     /// storage MKL owns (e.g. the result of copy or convert).
     fn new_mkl_owned(handle: sparse_matrix_t, rows: usize, cols: usize) -> Self {

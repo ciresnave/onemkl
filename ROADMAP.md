@@ -124,9 +124,13 @@ account for the vast majority of downstream use:
 - **LAPACK Comprehensive**: full auxiliary routine set (`?lacgv`,
   `?lacrm`, `?syconv`, `?larfg`, `?larft`, `?larfb`, `?lacpy`, etc.),
   Netlib-compatibility additions, `?tppack` / `?tpunpack`.
-- **Sparse Comprehensive**: matrix manipulation (`mkl_sparse_*_add`,
-  `mkl_sparse_*_spmm`, `mkl_sparse_*_spmmd`), inspector-executor
-  analysis routines, full export API.
+- **Sparse Comprehensive**: ~~matrix manipulation
+  (`mkl_sparse_*_add`, `mkl_sparse_*_spmm`,
+  `mkl_sparse_*_spmmd`)~~ (done — `SparseMatrix::{add, spmm,
+  spmmd}`); `mkl_sparse_sp2m` (with request flags), `_dotmv`,
+  `_symgs` / `_symgs_mv` (Gauss–Seidel sweep), `_syprd`
+  (`A · diag · Aᵀ`), inspector-executor analysis routines, full
+  export API.
 
 ### 0.4.0 — Domain-completion sweep
 
