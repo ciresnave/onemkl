@@ -562,6 +562,31 @@ pub trait BlasScalar: Scalar {
         batch_size: MKL_INT,
     );
 
+    /// `cblas_*gemm_batch` — pointer-array batched GEMM. Each "group"
+    /// shares uniform parameters (transposes, dimensions, alpha/beta);
+    /// `group_size[i]` is the number of GEMMs in group `i`. The
+    /// pointer arrays for `A`, `B`, `C` have total length
+    /// `sum(group_size)`.
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn cblas_gemm_batch(
+        layout: sys::CBLAS_LAYOUT::Type,
+        transa_array: *const sys::CBLAS_TRANSPOSE::Type,
+        transb_array: *const sys::CBLAS_TRANSPOSE::Type,
+        m_array: *const MKL_INT,
+        n_array: *const MKL_INT,
+        k_array: *const MKL_INT,
+        alpha_array: *const Self,
+        a_array: *mut *const Self,
+        lda_array: *const MKL_INT,
+        b_array: *mut *const Self,
+        ldb_array: *const MKL_INT,
+        beta_array: *const Self,
+        c_array: *mut *mut Self,
+        ldc_array: *const MKL_INT,
+        group_count: MKL_INT,
+        group_size: *const MKL_INT,
+    );
+
     /// `cblas_*trsm_batch_strided` — batched [`cblas_trsm`](Self::cblas_trsm).
     #[allow(clippy::too_many_arguments)]
     unsafe fn cblas_trsm_batch_strided(
@@ -1081,6 +1106,7 @@ macro_rules! impl_real_blas {
         copy_batch_strided = $copy_batch:ident,
         gemv_batch_strided = $gemv_batch:ident,
         gemm_batch_strided = $gemm_batch:ident,
+        gemm_batch_ptr = $gemm_batch_ptr:ident,
         trsm_batch_strided = $trsm_batch:ident,
         dgmm_batch_strided = $dgmm_batch:ident,
     ) => {
@@ -1428,6 +1454,38 @@ macro_rules! impl_real_blas {
                 }
             }
             #[inline]
+            unsafe fn cblas_gemm_batch(
+                layout: sys::CBLAS_LAYOUT::Type,
+                transa_array: *const sys::CBLAS_TRANSPOSE::Type,
+                transb_array: *const sys::CBLAS_TRANSPOSE::Type,
+                m_array: *const MKL_INT,
+                n_array: *const MKL_INT,
+                k_array: *const MKL_INT,
+                alpha_array: *const Self,
+                a_array: *mut *const Self,
+                lda_array: *const MKL_INT,
+                b_array: *mut *const Self,
+                ldb_array: *const MKL_INT,
+                beta_array: *const Self,
+                c_array: *mut *mut Self,
+                ldc_array: *const MKL_INT,
+                group_count: MKL_INT,
+                group_size: *const MKL_INT,
+            ) {
+                unsafe {
+                    sys::$gemm_batch_ptr(
+                        layout, transa_array, transb_array,
+                        m_array, n_array, k_array,
+                        alpha_array,
+                        a_array, lda_array,
+                        b_array, ldb_array,
+                        beta_array,
+                        c_array, ldc_array,
+                        group_count, group_size,
+                    )
+                }
+            }
+            #[inline]
             unsafe fn cblas_trsm_batch_strided(
                 layout: sys::CBLAS_LAYOUT::Type, side: sys::CBLAS_SIDE::Type,
                 uplo: sys::CBLAS_UPLO::Type, trans: sys::CBLAS_TRANSPOSE::Type,
@@ -1601,6 +1659,7 @@ impl_real_blas!(
     copy_batch_strided = cblas_scopy_batch_strided,
     gemv_batch_strided = cblas_sgemv_batch_strided,
     gemm_batch_strided = cblas_sgemm_batch_strided,
+    gemm_batch_ptr = cblas_sgemm_batch,
     trsm_batch_strided = cblas_strsm_batch_strided,
     dgmm_batch_strided = cblas_sdgmm_batch_strided,
 );
@@ -1630,6 +1689,7 @@ impl_real_blas!(
     copy_batch_strided = cblas_dcopy_batch_strided,
     gemv_batch_strided = cblas_dgemv_batch_strided,
     gemm_batch_strided = cblas_dgemm_batch_strided,
+    gemm_batch_ptr = cblas_dgemm_batch,
     trsm_batch_strided = cblas_dtrsm_batch_strided,
     dgmm_batch_strided = cblas_ddgmm_batch_strided,
 );
@@ -1672,6 +1732,7 @@ macro_rules! impl_complex_blas {
         copy_batch_strided = $copy_batch:ident,
         gemv_batch_strided = $gemv_batch:ident,
         gemm_batch_strided = $gemm_batch:ident,
+        gemm_batch_ptr = $gemm_batch_ptr:ident,
         trsm_batch_strided = $trsm_batch:ident,
         dgmm_batch_strided = $dgmm_batch:ident,
     ) => {
@@ -2109,6 +2170,38 @@ macro_rules! impl_complex_blas {
                 }
             }
             #[inline]
+            unsafe fn cblas_gemm_batch(
+                layout: sys::CBLAS_LAYOUT::Type,
+                transa_array: *const sys::CBLAS_TRANSPOSE::Type,
+                transb_array: *const sys::CBLAS_TRANSPOSE::Type,
+                m_array: *const MKL_INT,
+                n_array: *const MKL_INT,
+                k_array: *const MKL_INT,
+                alpha_array: *const Self,
+                a_array: *mut *const Self,
+                lda_array: *const MKL_INT,
+                b_array: *mut *const Self,
+                ldb_array: *const MKL_INT,
+                beta_array: *const Self,
+                c_array: *mut *mut Self,
+                ldc_array: *const MKL_INT,
+                group_count: MKL_INT,
+                group_size: *const MKL_INT,
+            ) {
+                unsafe {
+                    sys::$gemm_batch_ptr(
+                        layout, transa_array, transb_array,
+                        m_array, n_array, k_array,
+                        alpha_array.cast(),
+                        a_array.cast(), lda_array,
+                        b_array.cast(), ldb_array,
+                        beta_array.cast(),
+                        c_array.cast(), ldc_array,
+                        group_count, group_size,
+                    )
+                }
+            }
+            #[inline]
             unsafe fn cblas_trsm_batch_strided(
                 layout: sys::CBLAS_LAYOUT::Type, side: sys::CBLAS_SIDE::Type,
                 uplo: sys::CBLAS_UPLO::Type, trans: sys::CBLAS_TRANSPOSE::Type,
@@ -2437,6 +2530,7 @@ impl_complex_blas!(
     copy_batch_strided = cblas_ccopy_batch_strided,
     gemv_batch_strided = cblas_cgemv_batch_strided,
     gemm_batch_strided = cblas_cgemm_batch_strided,
+    gemm_batch_ptr = cblas_cgemm_batch,
     trsm_batch_strided = cblas_ctrsm_batch_strided,
     dgmm_batch_strided = cblas_cdgmm_batch_strided,
 );
@@ -2469,6 +2563,7 @@ impl_complex_blas!(
     copy_batch_strided = cblas_zcopy_batch_strided,
     gemv_batch_strided = cblas_zgemv_batch_strided,
     gemm_batch_strided = cblas_zgemm_batch_strided,
+    gemm_batch_ptr = cblas_zgemm_batch,
     trsm_batch_strided = cblas_ztrsm_batch_strided,
     dgmm_batch_strided = cblas_zdgmm_batch_strided,
 );

@@ -448,6 +448,135 @@ pub fn gemm_batch_strided<T: BlasScalar>(
     Ok(())
 }
 
+/// Pointer-array batched GEMM. Performs many GEMMs whose matrix
+/// shapes (and `alpha` / `beta`) vary across "groups". Each
+/// `GemmBatchGroup` holds the parameters for one group plus the
+/// pointer arrays for `A`, `B`, `C` of that group.
+///
+/// This is the canonical "batched GEMM" API used by ML/DL workloads
+/// where the per-call matrix shape can differ. For uniform-shape
+/// batches use [`gemm_batch_strided`] instead — it has a smaller
+/// dispatch overhead.
+///
+/// # Safety
+///
+/// Each `A` pointer must point to at least `lda * (op==NoTrans ? K :
+/// M)` (or appropriate) elements; same for `B` and `C`. The lifetime
+/// of the underlying buffers must extend through the call.
+pub fn gemm_batch<T: BlasScalar>(
+    layout: Layout,
+    groups: &mut [GemmBatchGroup<T>],
+) -> Result<()> {
+    if groups.is_empty() {
+        return Ok(());
+    }
+    // Validate: all the per-group pointer arrays must have length equal
+    // to group_size.
+    for g in groups.iter() {
+        if g.a_array.len() != g.group_size
+            || g.b_array.len() != g.group_size
+            || g.c_array.len() != g.group_size
+        {
+            return Err(Error::InvalidArgument(
+                "a_array / b_array / c_array length must equal group_size",
+            ));
+        }
+    }
+
+    // Build the parallel parameter arrays MKL expects.
+    let group_count = groups.len();
+    let mut transa = Vec::with_capacity(group_count);
+    let mut transb = Vec::with_capacity(group_count);
+    let mut m_arr = Vec::with_capacity(group_count);
+    let mut n_arr = Vec::with_capacity(group_count);
+    let mut k_arr = Vec::with_capacity(group_count);
+    let mut alpha_arr = Vec::with_capacity(group_count);
+    let mut lda_arr = Vec::with_capacity(group_count);
+    let mut ldb_arr = Vec::with_capacity(group_count);
+    let mut beta_arr = Vec::with_capacity(group_count);
+    let mut ldc_arr = Vec::with_capacity(group_count);
+    let mut group_sz = Vec::with_capacity(group_count);
+
+    let total: usize = groups.iter().map(|g| g.group_size).sum();
+    let mut a_ptrs: Vec<*const T> = Vec::with_capacity(total);
+    let mut b_ptrs: Vec<*const T> = Vec::with_capacity(total);
+    let mut c_ptrs: Vec<*mut T> = Vec::with_capacity(total);
+
+    for g in groups.iter_mut() {
+        transa.push(g.transa.as_cblas());
+        transb.push(g.transb.as_cblas());
+        m_arr.push(dim_to_mkl_int(g.m)?);
+        n_arr.push(dim_to_mkl_int(g.n)?);
+        k_arr.push(dim_to_mkl_int(g.k)?);
+        alpha_arr.push(g.alpha);
+        lda_arr.push(dim_to_mkl_int(g.lda)?);
+        ldb_arr.push(dim_to_mkl_int(g.ldb)?);
+        beta_arr.push(g.beta);
+        ldc_arr.push(dim_to_mkl_int(g.ldc)?);
+        group_sz.push(dim_to_mkl_int(g.group_size)?);
+        a_ptrs.extend(g.a_array.iter().copied());
+        b_ptrs.extend(g.b_array.iter().copied());
+        c_ptrs.extend(g.c_array.iter().copied());
+    }
+
+    unsafe {
+        T::cblas_gemm_batch(
+            layout.as_cblas(),
+            transa.as_ptr(),
+            transb.as_ptr(),
+            m_arr.as_ptr(),
+            n_arr.as_ptr(),
+            k_arr.as_ptr(),
+            alpha_arr.as_ptr(),
+            a_ptrs.as_mut_ptr(),
+            lda_arr.as_ptr(),
+            b_ptrs.as_mut_ptr(),
+            ldb_arr.as_ptr(),
+            beta_arr.as_ptr(),
+            c_ptrs.as_mut_ptr(),
+            ldc_arr.as_ptr(),
+            dim_to_mkl_int(group_count)?,
+            group_sz.as_ptr(),
+        );
+    }
+    Ok(())
+}
+
+/// One group of uniform GEMMs for [`gemm_batch`]. All GEMMs in this
+/// group share the transposes, dimensions, and scaling factors.
+#[derive(Debug)]
+pub struct GemmBatchGroup<'a, T: BlasScalar> {
+    /// Transpose flag for `A`.
+    pub transa: Transpose,
+    /// Transpose flag for `B`.
+    pub transb: Transpose,
+    /// Number of rows of `op(A)` and `C`.
+    pub m: usize,
+    /// Number of columns of `op(B)` and `C`.
+    pub n: usize,
+    /// Number of columns of `op(A)` / rows of `op(B)`.
+    pub k: usize,
+    /// Scaling factor for `A * B`.
+    pub alpha: T,
+    /// Leading dimension of each `A` matrix in this group.
+    pub lda: usize,
+    /// Leading dimension of each `B` matrix in this group.
+    pub ldb: usize,
+    /// Scaling factor for `C`.
+    pub beta: T,
+    /// Leading dimension of each `C` matrix in this group.
+    pub ldc: usize,
+    /// Number of GEMMs in this group.
+    pub group_size: usize,
+    /// `A` matrix pointers, one per GEMM in this group. Length must
+    /// equal `group_size`.
+    pub a_array: &'a [*const T],
+    /// `B` matrix pointers.
+    pub b_array: &'a [*const T],
+    /// `C` matrix pointers, one per GEMM (mutable).
+    pub c_array: &'a [*mut T],
+}
+
 /// Batched [`super::level3::trsm`].
 #[allow(clippy::too_many_arguments)]
 pub fn trsm_batch_strided<T: BlasScalar>(

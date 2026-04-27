@@ -28,7 +28,7 @@ function(s).
 | Domain | Tier | Notes |
 | --- | --- | --- |
 | BLAS L1/L2/L3 | Common | All universal + real-only + complex-only routines, including banded and packed |
-| BLAS-like extensions | MVP | `axpby`, `imatcopy`/`omatcopy`/`omatcopy2`/`omatadd`, batched (strided) `gemm`/`trsm`/`gemv`/`dgmm`/`axpy`/`copy`/`gemm3m` |
+| BLAS-like extensions | MVP+ | `axpby`, `imatcopy`/`omatcopy`/`omatcopy2`/`omatadd`, batched (strided) `gemm`/`trsm`/`gemv`/`dgmm`/`axpy`/`copy`/`gemm3m`; pointer-array `gemm_batch` |
 | LAPACK | Common | Linear solve, QR, LS, eigenvalue (incl. RRR + D&C), SVD, banded, packed, generalized |
 | Sparse BLAS (IE) | Common | CSR / COO / CSC / BSR construction; `mv`/`mm`/`trsv`/`optimize` + Sparse QR factor / solve; copy / convert / order / mv-mm-sv hint setters |
 | PARDISO | MVP+ | Factor + solve, multi-RHS, cached factorization, diagonal extraction, save/restore handle |
@@ -52,8 +52,9 @@ routine or trait method.
 
 Move every domain currently at MVP up to Common. Specifically:
 
-- **BLAS-like extensions**: pointer-array batched (`?gemm_batch`,
-  `?trsm_batch`, `?gemv_batch`), pack/compute API (`?gemm_pack`,
+- **BLAS-like extensions**: ~~pointer-array `?gemm_batch`~~ (done —
+  `gemm_batch` + `GemmBatchGroup`); `?trsm_batch`, `?gemv_batch` (other
+  pointer-array variants); pack/compute API (`?gemm_pack`,
   `?gemm_compute`), JIT (`mkl_jit_create_?gemm`).
 - **LAPACK**: banded variants (`?gbsv`, `?gbtrf`/`?gbtrs`,
   `?pbsv`/`?pbtrf`/`?pbtrs`), packed variants (`?spsv`/`?sptrf`,
