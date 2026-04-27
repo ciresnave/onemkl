@@ -410,3 +410,397 @@ fn classify_stop(
         IssStopReason::Other(last_rci as i32)
     }
 }
+
+// =====================================================================
+// Full RCI surface — caller-driven loop
+// =====================================================================
+
+/// One step's request from MKL's RCI engine. Borrows `src` / `dst`
+/// from the session's internal `tmp` buffer, so the user must
+/// finish the operation before calling `step` again.
+#[derive(Debug)]
+pub enum RciAction<'a> {
+    /// Iteration complete; `x` holds the converged solution.
+    Converged,
+    /// MKL needs `dst ← A * src`. Compute it in place, then call
+    /// `step` again.
+    NeedMatVec {
+        /// Source vector (read-only).
+        src: &'a [f64],
+        /// Destination buffer to overwrite with `A * src`.
+        dst: &'a mut [f64],
+    },
+    /// MKL needs `dst ← M⁻¹ * src` for a user preconditioner.
+    NeedPrecondition {
+        /// Source vector.
+        src: &'a [f64],
+        /// Destination buffer.
+        dst: &'a mut [f64],
+    },
+    /// MKL is asking the user whether to stop (only when
+    /// `ipar[8] = 0`).
+    StoppingTest,
+    /// Any other `rci_request` value (usually a fatal error code).
+    Other(i32),
+}
+
+/// Reusable CG session for callers who want to drive the RCI loop
+/// themselves rather than passing closures to [`solve_cg`].
+///
+/// Typical usage:
+///
+/// ```ignore
+/// let mut session = CgSession::new(n, &b, &x, opts, false)?;
+/// loop {
+///     match session.step(&b, &mut x)? {
+///         RciAction::Converged => break,
+///         RciAction::NeedMatVec { src, dst } => my_mat_vec(src, dst),
+///         RciAction::NeedPrecondition { .. } => unreachable!(),
+///         RciAction::StoppingTest => continue,
+///         RciAction::Other(code) => return Err(Error::LapackComputationFailure { info: code }),
+///     }
+/// }
+/// let result = session.finish(&b, &x)?;
+/// ```
+pub struct CgSession {
+    n: c_int,
+    n_us: usize,
+    ipar: [c_int; 128],
+    dpar: [f64; 128],
+    tmp: Vec<f64>,
+    last_rci: c_int,
+    max_iterations: usize,
+    preconditioned: bool,
+}
+
+impl CgSession {
+    /// Build a new CG session. `b` and `x` must have length `n`; `x`
+    /// is the initial guess. The session is reusable across many
+    /// `step` calls until `finish` is invoked.
+    pub fn new(
+        n: usize,
+        b: &[f64],
+        x: &[f64],
+        opts: IssOptions,
+        preconditioned: bool,
+    ) -> Result<Self> {
+        if b.len() != n || x.len() != n {
+            return Err(Error::InvalidArgument(
+                "b and x must each have length n",
+            ));
+        }
+        let n_i: c_int = n.try_into().map_err(|_| Error::DimensionOverflow)?;
+        let mut ipar: [c_int; 128] = [0; 128];
+        let mut dpar: [f64; 128] = [0.0; 128];
+        let mut tmp: Vec<f64> = vec![0.0; 4 * n];
+        let mut rci: c_int = 0;
+        unsafe {
+            sys::dcg_init(
+                &n_i,
+                x.as_ptr(),
+                b.as_ptr(),
+                &mut rci,
+                ipar.as_mut_ptr(),
+                dpar.as_mut_ptr(),
+                tmp.as_mut_ptr(),
+            );
+        }
+        if rci != 0 {
+            return Err(Error::LapackComputationFailure { info: rci });
+        }
+        ipar[4] = opts.max_iterations.try_into().unwrap_or(c_int::MAX);
+        ipar[7] = 1;
+        ipar[8] = 1;
+        ipar[9] = 0;
+        ipar[10] = if preconditioned { 1 } else { 0 };
+        dpar[0] = opts.relative_tolerance;
+        dpar[1] = opts.absolute_tolerance;
+        unsafe {
+            sys::dcg_check(
+                &n_i,
+                x.as_ptr(),
+                b.as_ptr(),
+                &mut rci,
+                ipar.as_mut_ptr(),
+                dpar.as_mut_ptr(),
+                tmp.as_mut_ptr(),
+            );
+        }
+        if rci < 0 {
+            return Err(Error::LapackComputationFailure { info: rci });
+        }
+        Ok(Self {
+            n: n_i,
+            n_us: n,
+            ipar,
+            dpar,
+            tmp,
+            last_rci: 0,
+            max_iterations: opts.max_iterations,
+            preconditioned,
+        })
+    }
+
+    /// Advance the iteration by one MKL step. Returns the action MKL
+    /// wants the caller to perform before the next `step`.
+    pub fn step<'a>(&'a mut self, b: &[f64], x: &mut [f64]) -> Result<RciAction<'a>> {
+        let mut rci: c_int = 0;
+        unsafe {
+            sys::dcg(
+                &self.n,
+                x.as_mut_ptr(),
+                b.as_ptr(),
+                &mut rci,
+                self.ipar.as_mut_ptr(),
+                self.dpar.as_mut_ptr(),
+                self.tmp.as_mut_ptr(),
+            );
+        }
+        self.last_rci = rci;
+        match rci {
+            0 => Ok(RciAction::Converged),
+            1 => {
+                // Source at tmp[0..n], destination at tmp[n..2n].
+                let n = self.n_us;
+                let (src_part, rest) = self.tmp.split_at_mut(n);
+                let dst = &mut rest[..n];
+                Ok(RciAction::NeedMatVec { src: src_part, dst })
+            }
+            2 => Ok(RciAction::StoppingTest),
+            3 => {
+                if !self.preconditioned {
+                    return Err(Error::InvalidArgument(
+                        "CG requested preconditioning but session was built without it",
+                    ));
+                }
+                // Source at tmp[2n..3n], destination at tmp[3n..4n].
+                let n = self.n_us;
+                let (lo, hi) = self.tmp.split_at_mut(3 * n);
+                let src = &lo[2 * n..3 * n];
+                let dst = &mut hi[..n];
+                Ok(RciAction::NeedPrecondition { src, dst })
+            }
+            other => Ok(RciAction::Other(other as i32)),
+        }
+    }
+
+    /// Read iteration / residual diagnostics and finalize the session.
+    pub fn finish(&mut self, b: &[f64], x: &[f64]) -> Result<IssResult> {
+        let mut itercount: c_int = 0;
+        let mut rci: c_int = 0;
+        unsafe {
+            sys::dcg_get(
+                &self.n,
+                x.as_ptr(),
+                b.as_ptr(),
+                &mut rci,
+                self.ipar.as_mut_ptr(),
+                self.dpar.as_mut_ptr(),
+                self.tmp.as_mut_ptr(),
+                &mut itercount,
+            );
+        }
+        let iterations = itercount.max(0) as usize;
+        Ok(IssResult {
+            iterations,
+            initial_residual_norm: self.dpar[2],
+            final_residual_norm: self.dpar[4],
+            stop_reason: classify_stop(
+                self.last_rci,
+                iterations,
+                self.max_iterations,
+                self.dpar[4],
+                &self.dpar,
+            ),
+        })
+    }
+
+    /// Borrow the iteration parameter array (`ipar`).
+    #[inline]
+    pub fn ipar(&mut self) -> &mut [c_int; 128] {
+        &mut self.ipar
+    }
+
+    /// Borrow the floating-point parameter array (`dpar`).
+    #[inline]
+    pub fn dpar(&mut self) -> &mut [f64; 128] {
+        &mut self.dpar
+    }
+}
+
+/// Reusable FGMRES session — analogous to [`CgSession`] but for the
+/// non-symmetric solver.
+pub struct FgmresSession {
+    n: c_int,
+    n_us: usize,
+    ipar: [c_int; 128],
+    dpar: [f64; 128],
+    tmp: Vec<f64>,
+    last_rci: c_int,
+    max_iterations: usize,
+}
+
+impl FgmresSession {
+    /// Build a new FGMRES session. `b` and `x` must have length `n`.
+    pub fn new(
+        n: usize,
+        b: &[f64],
+        x: &[f64],
+        opts: IssOptions,
+    ) -> Result<Self> {
+        if b.len() != n || x.len() != n {
+            return Err(Error::InvalidArgument(
+                "b and x must each have length n",
+            ));
+        }
+        let n_i: c_int = n.try_into().map_err(|_| Error::DimensionOverflow)?;
+        let restart = opts.restart_length.min(n);
+        let restart_i: c_int = restart.try_into().map_err(|_| Error::DimensionOverflow)?;
+        let mut ipar: [c_int; 128] = [0; 128];
+        let mut dpar: [f64; 128] = [0.0; 128];
+        let tmp_len = ((2 * restart + 1) * n) + restart * (restart + 9) / 2 + 1;
+        let mut tmp: Vec<f64> = vec![0.0; tmp_len];
+        let mut rci: c_int = 0;
+        unsafe {
+            sys::dfgmres_init(
+                &n_i,
+                x.as_ptr(),
+                b.as_ptr(),
+                &mut rci,
+                ipar.as_mut_ptr(),
+                dpar.as_mut_ptr(),
+                tmp.as_mut_ptr(),
+            );
+        }
+        if rci != 0 {
+            return Err(Error::LapackComputationFailure { info: rci });
+        }
+        ipar[4] = opts.max_iterations.try_into().unwrap_or(c_int::MAX);
+        ipar[7] = 1;
+        ipar[8] = 1;
+        ipar[9] = 0;
+        ipar[10] = 0;
+        ipar[11] = 1;
+        ipar[14] = restart_i;
+        dpar[0] = opts.relative_tolerance;
+        dpar[1] = opts.absolute_tolerance;
+        unsafe {
+            sys::dfgmres_check(
+                &n_i,
+                x.as_ptr(),
+                b.as_ptr(),
+                &mut rci,
+                ipar.as_mut_ptr(),
+                dpar.as_mut_ptr(),
+                tmp.as_mut_ptr(),
+            );
+        }
+        if rci < 0 {
+            return Err(Error::LapackComputationFailure { info: rci });
+        }
+        Ok(Self {
+            n: n_i,
+            n_us: n,
+            ipar,
+            dpar,
+            tmp,
+            last_rci: 0,
+            max_iterations: opts.max_iterations,
+        })
+    }
+
+    /// Advance the FGMRES iteration by one MKL step.
+    pub fn step<'a>(
+        &'a mut self,
+        b: &mut [f64],
+        x: &mut [f64],
+    ) -> Result<RciAction<'a>> {
+        let mut rci: c_int = 0;
+        unsafe {
+            sys::dfgmres(
+                &self.n,
+                x.as_mut_ptr(),
+                b.as_mut_ptr(),
+                &mut rci,
+                self.ipar.as_mut_ptr(),
+                self.dpar.as_mut_ptr(),
+                self.tmp.as_mut_ptr(),
+            );
+        }
+        self.last_rci = rci;
+        match rci {
+            0 => Ok(RciAction::Converged),
+            1 => {
+                let n = self.n_us;
+                let src_off = (self.ipar[21] - 1).max(0) as usize;
+                let dst_off = (self.ipar[22] - 1).max(0) as usize;
+                if src_off + n > self.tmp.len() || dst_off + n > self.tmp.len() {
+                    return Err(Error::InvalidArgument(
+                        "FGMRES requested mat-vec with out-of-range tmp offsets",
+                    ));
+                }
+                if src_off == dst_off {
+                    return Err(Error::InvalidArgument(
+                        "FGMRES requested mat-vec with overlapping src and dst",
+                    ));
+                }
+                if src_off < dst_off {
+                    let (lo, hi) = self.tmp.split_at_mut(dst_off);
+                    let src = &lo[src_off..src_off + n];
+                    let dst = &mut hi[..n];
+                    Ok(RciAction::NeedMatVec { src, dst })
+                } else {
+                    let (lo, hi) = self.tmp.split_at_mut(src_off);
+                    let src = &hi[..n];
+                    let dst = &mut lo[dst_off..dst_off + n];
+                    Ok(RciAction::NeedMatVec { src, dst })
+                }
+            }
+            2 => Ok(RciAction::StoppingTest),
+            other => Ok(RciAction::Other(other as i32)),
+        }
+    }
+
+    /// Finalize the iteration and return diagnostics.
+    pub fn finish(&mut self, b: &mut [f64], x: &mut [f64]) -> Result<IssResult> {
+        let mut itercount: c_int = 0;
+        let mut rci: c_int = 0;
+        unsafe {
+            sys::dfgmres_get(
+                &self.n,
+                x.as_mut_ptr(),
+                b.as_mut_ptr(),
+                &mut rci,
+                self.ipar.as_mut_ptr(),
+                self.dpar.as_mut_ptr(),
+                self.tmp.as_mut_ptr(),
+                &mut itercount,
+            );
+        }
+        let iterations = itercount.max(0) as usize;
+        Ok(IssResult {
+            iterations,
+            initial_residual_norm: self.dpar[2],
+            final_residual_norm: self.dpar[4],
+            stop_reason: classify_stop(
+                self.last_rci,
+                iterations,
+                self.max_iterations,
+                self.dpar[4],
+                &self.dpar,
+            ),
+        })
+    }
+
+    /// Borrow the iteration parameter array.
+    #[inline]
+    pub fn ipar(&mut self) -> &mut [c_int; 128] {
+        &mut self.ipar
+    }
+
+    /// Borrow the floating-point parameter array.
+    #[inline]
+    pub fn dpar(&mut self) -> &mut [f64; 128] {
+        &mut self.dpar
+    }
+}

@@ -33,7 +33,7 @@ function(s).
 | Sparse BLAS (IE) | Common | CSR / COO / CSC / BSR construction; `mv`/`mm`/`trsv`/`optimize` + Sparse QR factor / solve; copy / convert / order / mv-mm-sv hint setters |
 | PARDISO | MVP+ | Factor + solve, multi-RHS, cached factorization, diagonal extraction, save/restore handle, low-level `export`, user `perm` |
 | DSS | Common | Real + complex (single + double precision) factor / solve, multi-RHS, statistics (timing / memory / determinant / inertia) |
-| ISS (CG, FGMRES) | MVP+ | Closure-driven mat-vec; preconditioned CG; `IssResult` with iterations / residual norms / stop reason |
+| ISS (CG, FGMRES) | Common | Closure-driven mat-vec; preconditioned CG; `IssResult` with iterations / residual norms / stop reason; full RCI surface via `CgSession` / `FgmresSession` |
 | Preconditioners | MVP | ILU0, ILUT |
 | FEAST | Common | Dense / CSR / banded standard problems; dense generalized problem; real + complex; RCI still TODO |
 | VM (Vector Math) | Common | All major function families |
@@ -77,10 +77,11 @@ Move every domain currently at MVP up to Common. Specifically:
 - **DSS**: ~~complex matrices, statistics readout~~ (done — complex
   factor/solve already covered, plus `factor_time` / `peak_memory_kb`
   / `determinant` / `inertia` etc.); generalized symmetric options.
-- **ISS**: ~~expose `?cg_get`/`?fgmres_get` reasoning codes~~ (done —
-  `IssResult { iterations, initial_residual_norm,
-  final_residual_norm, stop_reason }`); full RCI surface for users who
-  want to drive their own loop.
+- **ISS**: ~~expose `?cg_get`/`?fgmres_get` reasoning codes; full RCI
+  surface for users who want to drive their own loop~~ (done —
+  `IssResult` plus `CgSession` / `FgmresSession` with `step` →
+  `RciAction { Converged, NeedMatVec, NeedPrecondition,
+  StoppingTest, Other }`).
 - **FEAST**: ~~CSR-input drivers (`?feast_scsrev`, `?feast_hcsrev`),
   banded (`?feast_sbev`, `?feast_hbev`), dense generalized
   (`?feast_sygv` / `?feast_hegv`)~~ (done — `eigh_real_csr` /
