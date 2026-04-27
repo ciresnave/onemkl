@@ -121,9 +121,11 @@ account for the vast majority of downstream use:
   `gemm_compute_packed_{a,b}` in `blas::packed`); compact BLAS
   (`mkl_?gemm_compact`, `mkl_?trsm_compact`, `mkl_?potrf_compact`,
   etc.).
-- **LAPACK Comprehensive**: full auxiliary routine set (`?lacgv`,
-  `?lacrm`, `?syconv`, `?larfg`, `?larft`, `?larfb`, `?lacpy`, etc.),
-  Netlib-compatibility additions, `?tppack` / `?tpunpack`.
+- **LAPACK Comprehensive**: ~~core auxiliary routines (`?lacpy`,
+  `?lange`, `?gecon`, `?larfg`, `?laswp`)~~ (done in
+  `lapack::{lacpy, lange, gecon, laswp, larfg}`); remaining
+  auxiliary set (`?lacgv`, `?lacrm`, `?syconv`, `?larft`, `?larfb`,
+  etc.), Netlib-compatibility additions, `?tppack` / `?tpunpack`.
 - **Sparse Comprehensive**: ~~matrix manipulation
   (`mkl_sparse_*_add`, `mkl_sparse_*_spmm`,
   `mkl_sparse_*_spmmd`)~~ (done — `SparseMatrix::{add, spmm,

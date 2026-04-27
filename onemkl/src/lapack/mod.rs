@@ -1875,3 +1875,218 @@ pub fn ggev_complex<T: ComplexLapackScalar>(
     };
     check_info(info)
 }
+
+// =====================================================================
+// Auxiliary routines
+// =====================================================================
+
+/// Which triangle of a matrix to copy in [`lacpy`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum LacpyPart {
+    /// Upper triangle including diagonal.
+    Upper,
+    /// Lower triangle including diagonal.
+    Lower,
+    /// Full matrix.
+    Full,
+}
+
+impl LacpyPart {
+    #[inline]
+    fn as_char(self) -> core::ffi::c_char {
+        match self {
+            Self::Upper => b'U' as _,
+            Self::Lower => b'L' as _,
+            Self::Full => b'A' as _,
+        }
+    }
+}
+
+/// Norm to compute in [`lange`] / use in [`gecon`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum MatrixNorm {
+    /// Maximum absolute element value (`'M'` in LAPACK).
+    Max,
+    /// 1-norm (max column-absolute-sum, `'1'` in LAPACK).
+    One,
+    /// Infinity-norm (max row-absolute-sum, `'I'`).
+    Infinity,
+    /// Frobenius norm (Euclidean of all elements, `'F'`).
+    Frobenius,
+}
+
+impl MatrixNorm {
+    #[inline]
+    fn as_char(self) -> core::ffi::c_char {
+        match self {
+            Self::Max => b'M' as _,
+            Self::One => b'1' as _,
+            Self::Infinity => b'I' as _,
+            Self::Frobenius => b'F' as _,
+        }
+    }
+}
+
+/// Copy a matrix region from `a` into `b`. Wraps `LAPACKE_*lacpy`.
+///
+/// Useful for snapshotting an in-place factorization input, or
+/// promoting a triangular factor before applying a transformation.
+pub fn lacpy<T: LapackScalar>(
+    part: LacpyPart,
+    a: &MatrixRef<'_, T>,
+    b: &mut MatrixMut<'_, T>,
+) -> Result<()> {
+    if a.rows() != b.rows() || a.cols() != b.cols() {
+        return Err(Error::InvalidArgument(
+            "source and destination must have the same shape",
+        ));
+    }
+    let layout = ensure_layout(&[a.layout(), b.layout()])?;
+    let m = dim_to_mkl_int(a.rows())?;
+    let n = dim_to_mkl_int(a.cols())?;
+    let lda = dim_to_mkl_int(a.leading_dim())?;
+    let ldb = dim_to_mkl_int(b.leading_dim())?;
+    let info = unsafe {
+        T::lapacke_lacpy(
+            layout.as_lapack(),
+            part.as_char(),
+            m, n,
+            a.as_ptr(), lda,
+            b.as_mut_ptr(), ldb,
+        )
+    };
+    check_info(info)
+}
+
+/// Compute a matrix norm. Wraps `LAPACKE_*lange` and returns the
+/// scalar norm value.
+pub fn lange<T: LapackScalar>(norm: MatrixNorm, a: &MatrixRef<'_, T>) -> Result<T::Real> {
+    let m = dim_to_mkl_int(a.rows())?;
+    let n = dim_to_mkl_int(a.cols())?;
+    let lda = dim_to_mkl_int(a.leading_dim())?;
+    let value = unsafe {
+        T::lapacke_lange(
+            a.layout().as_lapack(),
+            norm.as_char(),
+            m, n,
+            a.as_ptr(), lda,
+        )
+    };
+    Ok(value)
+}
+
+/// Reciprocal condition number `1 / κ(A)` from a previously LU-
+/// factored matrix and its norm. Wraps `LAPACKE_*gecon`.
+///
+/// `a` must contain the LU factors as produced by [`getrf`].
+/// `anorm` is the matrix norm of the *original* matrix in the same
+/// `norm` selection passed here.
+pub fn gecon<T: LapackScalar>(
+    norm: MatrixNorm,
+    a: &MatrixRef<'_, T>,
+    anorm: T::Real,
+) -> Result<T::Real>
+where
+    T::Real: Default,
+{
+    if a.rows() != a.cols() {
+        return Err(Error::InvalidArgument("gecon requires a square matrix"));
+    }
+    let n_i = dim_to_mkl_int(a.rows())?;
+    let lda = dim_to_mkl_int(a.leading_dim())?;
+    let mut rcond: T::Real = T::Real::default();
+    let info = unsafe {
+        T::lapacke_gecon(
+            a.layout().as_lapack(),
+            norm.as_char(),
+            n_i,
+            a.as_ptr(), lda,
+            anorm,
+            &mut rcond,
+        )
+    };
+    check_info(info)?;
+    Ok(rcond)
+}
+
+/// Apply a sequence of row interchanges to a matrix from an LAPACK
+/// pivot vector. Wraps `LAPACKE_*laswp`.
+///
+/// `k1`, `k2` are 1-based indices into `ipiv` selecting the range of
+/// pivots to apply. `incx = 1` applies them forward; `-1` applies
+/// them in reverse order.
+pub fn laswp<T: LapackScalar>(
+    a: &mut MatrixMut<'_, T>,
+    k1: i32,
+    k2: i32,
+    ipiv: &[i32],
+    incx: i32,
+) -> Result<()> {
+    let n = dim_to_mkl_int(a.cols())?;
+    let lda = dim_to_mkl_int(a.leading_dim())?;
+    if k1 < 1 || k2 < k1 || (k2 as usize) > ipiv.len() {
+        return Err(Error::InvalidArgument(
+            "k1, k2 must satisfy 1 ≤ k1 ≤ k2 ≤ ipiv.len()",
+        ));
+    }
+    let info = unsafe {
+        T::lapacke_laswp(
+            a.layout().as_lapack(),
+            n,
+            a.as_mut_ptr(), lda,
+            k1, k2,
+            ipiv.as_ptr(),
+            incx,
+        )
+    };
+    check_info(info)
+}
+
+/// Result of generating a Householder reflector with [`larfg`]:
+/// `H = I − τ · v · vᴴ` where `v[0] = 1` (implicitly) and the rest
+/// of `v` is stored back into the input slice past `alpha`.
+#[derive(Debug, Clone, Copy)]
+pub struct HouseholderReflector<T> {
+    /// Updated leading element of the source vector (the reflector's
+    /// magnitude after reflection).
+    pub alpha: T,
+    /// Householder coefficient `τ`.
+    pub tau: T,
+}
+
+/// Generate an elementary Householder reflector. Wraps
+/// `LAPACKE_*larfg`.
+///
+/// On entry `alpha` is the leading element and `x` (length `n - 1`)
+/// holds the rest of the source vector. On return `alpha` is replaced
+/// by the reflected leading element; `x` holds the lower part of the
+/// reflector vector `v` (with the implicit leading `1` not stored).
+pub fn larfg<T: LapackScalar>(
+    n: usize,
+    alpha: &mut T,
+    x: &mut [T],
+    incx: i32,
+) -> Result<HouseholderReflector<T>>
+where
+    T: Default,
+{
+    if n == 0 {
+        return Err(Error::InvalidArgument("n must be ≥ 1"));
+    }
+    if x.len() < n.saturating_sub(1) {
+        return Err(Error::InvalidArgument("x is too short for n - 1 elements"));
+    }
+    let n_i = dim_to_mkl_int(n)?;
+    let mut tau: T = T::default();
+    let info = unsafe {
+        T::lapacke_larfg(
+            n_i,
+            alpha,
+            x.as_mut_ptr(),
+            incx,
+            &mut tau,
+        )
+    };
+    check_info(info)?;
+    Ok(HouseholderReflector { alpha: *alpha, tau })
+}
