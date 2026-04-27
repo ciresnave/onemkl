@@ -672,6 +672,175 @@ impl<T: SparseScalar> SparseMatrix<T> {
         };
         check_sparse(status)
     }
+
+    /// Clone the matrix. The new handle and its internal storage are
+    /// owned by the returned `SparseMatrix` and freed on drop. Wraps
+    /// `mkl_sparse_copy`.
+    pub fn copy(&self, descr: impl Into<MatrixDescr>) -> Result<Self> {
+        let descr_inner = descr.into().inner;
+        let mut dest: sparse_matrix_t = ptr::null_mut();
+        let status = unsafe { sys::mkl_sparse_copy(self.handle, descr_inner, &mut dest) };
+        check_sparse(status)?;
+        Ok(Self::new_mkl_owned(dest, self.rows, self.cols))
+    }
+
+    /// Convert this matrix to CSR storage. If `op` is
+    /// `Operation::Trans` or `ConjTrans`, the conversion implicitly
+    /// transposes. Wraps `mkl_sparse_convert_csr`.
+    pub fn convert_csr(&self, op: Operation) -> Result<Self> {
+        let mut dest: sparse_matrix_t = ptr::null_mut();
+        let status =
+            unsafe { sys::mkl_sparse_convert_csr(self.handle, op.as_sys(), &mut dest) };
+        check_sparse(status)?;
+        let (rows, cols) = transposed_shape(op, self.rows, self.cols);
+        Ok(Self::new_mkl_owned(dest, rows, cols))
+    }
+
+    /// Convert this matrix to CSC storage. Wraps
+    /// `mkl_sparse_convert_csc`.
+    pub fn convert_csc(&self, op: Operation) -> Result<Self> {
+        let mut dest: sparse_matrix_t = ptr::null_mut();
+        let status =
+            unsafe { sys::mkl_sparse_convert_csc(self.handle, op.as_sys(), &mut dest) };
+        check_sparse(status)?;
+        let (rows, cols) = transposed_shape(op, self.rows, self.cols);
+        Ok(Self::new_mkl_owned(dest, rows, cols))
+    }
+
+    /// Convert this matrix to COO storage. Wraps
+    /// `mkl_sparse_convert_coo`.
+    pub fn convert_coo(&self, op: Operation) -> Result<Self> {
+        let mut dest: sparse_matrix_t = ptr::null_mut();
+        let status =
+            unsafe { sys::mkl_sparse_convert_coo(self.handle, op.as_sys(), &mut dest) };
+        check_sparse(status)?;
+        let (rows, cols) = transposed_shape(op, self.rows, self.cols);
+        Ok(Self::new_mkl_owned(dest, rows, cols))
+    }
+
+    /// Convert this matrix to BSR storage with the given `block_size`
+    /// and per-block storage layout. Wraps `mkl_sparse_convert_bsr`.
+    pub fn convert_bsr(
+        &self,
+        block_size: usize,
+        block_layout: BlockLayout,
+        op: Operation,
+    ) -> Result<Self> {
+        let bs: core::ffi::c_int =
+            block_size.try_into().map_err(|_| Error::DimensionOverflow)?;
+        let mut dest: sparse_matrix_t = ptr::null_mut();
+        let status = unsafe {
+            sys::mkl_sparse_convert_bsr(
+                self.handle,
+                bs,
+                block_layout.as_sys(),
+                op.as_sys(),
+                &mut dest,
+            )
+        };
+        check_sparse(status)?;
+        let (rows, cols) = transposed_shape(op, self.rows, self.cols);
+        Ok(Self::new_mkl_owned(dest, rows, cols))
+    }
+
+    /// Sort column indices within each row (CSR / BSR) or row indices
+    /// within each column (CSC) so that subsequent executor routines
+    /// can take faster paths. Wraps `mkl_sparse_order`.
+    pub fn order(&self) -> Result<()> {
+        let status = unsafe { sys::mkl_sparse_order(self.handle) };
+        check_sparse(status)
+    }
+
+    /// Hint that `mv` will be called approximately `expected_calls`
+    /// times with the given operation and descriptor. Used by
+    /// `optimize` to choose internal layouts. Wraps
+    /// `mkl_sparse_set_mv_hint`.
+    pub fn set_mv_hint(
+        &self,
+        op: Operation,
+        descr: impl Into<MatrixDescr>,
+        expected_calls: usize,
+    ) -> Result<()> {
+        let calls: core::ffi::c_int = expected_calls
+            .try_into()
+            .map_err(|_| Error::DimensionOverflow)?;
+        let descr_inner = descr.into().inner;
+        let status = unsafe {
+            sys::mkl_sparse_set_mv_hint(self.handle, op.as_sys(), descr_inner, calls)
+        };
+        check_sparse(status)
+    }
+
+    /// Hint that `mm` will be called approximately `expected_calls`
+    /// times. Wraps `mkl_sparse_set_mm_hint`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn set_mm_hint(
+        &self,
+        op: Operation,
+        descr: impl Into<MatrixDescr>,
+        layout: DenseLayout,
+        dense_matrix_size: usize,
+        expected_calls: usize,
+    ) -> Result<()> {
+        let dms: core::ffi::c_int = dense_matrix_size
+            .try_into()
+            .map_err(|_| Error::DimensionOverflow)?;
+        let calls: core::ffi::c_int = expected_calls
+            .try_into()
+            .map_err(|_| Error::DimensionOverflow)?;
+        let descr_inner = descr.into().inner;
+        let status = unsafe {
+            sys::mkl_sparse_set_mm_hint(
+                self.handle,
+                op.as_sys(),
+                descr_inner,
+                layout.as_sys(),
+                dms,
+                calls,
+            )
+        };
+        check_sparse(status)
+    }
+
+    /// Hint that `trsv` will be called approximately `expected_calls`
+    /// times. Wraps `mkl_sparse_set_sv_hint`.
+    pub fn set_sv_hint(
+        &self,
+        op: Operation,
+        descr: impl Into<MatrixDescr>,
+        expected_calls: usize,
+    ) -> Result<()> {
+        let calls: core::ffi::c_int = expected_calls
+            .try_into()
+            .map_err(|_| Error::DimensionOverflow)?;
+        let descr_inner = descr.into().inner;
+        let status = unsafe {
+            sys::mkl_sparse_set_sv_hint(self.handle, op.as_sys(), descr_inner, calls)
+        };
+        check_sparse(status)
+    }
+
+    /// Build a [`SparseMatrix`] around an MKL handle whose internal
+    /// storage MKL owns (e.g. the result of copy or convert).
+    fn new_mkl_owned(handle: sparse_matrix_t, rows: usize, cols: usize) -> Self {
+        Self {
+            handle,
+            _idx_a: Box::new([]),
+            _idx_b: Box::new([]),
+            _values: Box::new([]),
+            rows,
+            cols,
+            _marker: PhantomData,
+        }
+    }
+}
+
+#[inline]
+fn transposed_shape(op: Operation, rows: usize, cols: usize) -> (usize, usize) {
+    match op {
+        Operation::NoTrans => (rows, cols),
+        Operation::Trans | Operation::ConjTrans => (cols, rows),
+    }
 }
 
 // =====================================================================

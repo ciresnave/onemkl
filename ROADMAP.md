@@ -30,7 +30,7 @@ function(s).
 | BLAS L1/L2/L3 | Common | All universal + real-only + complex-only routines, including banded and packed |
 | BLAS-like extensions | MVP | `axpby`, `imatcopy`/`omatcopy`/`omatcopy2`/`omatadd`, batched (strided) `gemm`/`trsm`/`gemv`/`dgmm`/`axpy`/`copy`/`gemm3m` |
 | LAPACK | Common | Linear solve, QR, LS, eigenvalue (incl. RRR + D&C), SVD, banded, packed, generalized |
-| Sparse BLAS (IE) | MVP+ | CSR / COO / CSC / BSR construction; `mv`/`mm`/`trsv`/`optimize` + Sparse QR factor / solve |
+| Sparse BLAS (IE) | Common | CSR / COO / CSC / BSR construction; `mv`/`mm`/`trsv`/`optimize` + Sparse QR factor / solve; copy / convert / order / mv-mm-sv hint setters |
 | PARDISO | MVP+ | Factor + solve, multi-RHS, cached factorization, diagonal extraction, save/restore handle |
 | DSS | Common | Real + complex (single + double precision) factor / solve, multi-RHS, statistics (timing / memory / determinant / inertia) |
 | ISS (CG, FGMRES) | MVP+ | Closure-driven mat-vec; preconditioned CG; `IssResult` with iterations / residual norms / stop reason |
@@ -61,9 +61,10 @@ Move every domain currently at MVP up to Common. Specifically:
   `?hegv`), expert / RRR drivers (`?gesvx`, `?syevr`, `?heevr`),
   utility routines (`?lange`, `?gecon`, `?syrfs`).
 - **Sparse BLAS**: ~~COO, CSC, BSR formats~~ (done — `from_coo` /
-  `from_csc` / `from_bsr` constructors); `mkl_sparse_copy`,
+  `from_csc` / `from_bsr` constructors); ~~`mkl_sparse_copy`,
   `mkl_sparse_convert_*`, `mkl_sparse_order`; the analysis-stage hint
-  setters (`mkl_sparse_set_mv_hint`, etc.).
+  setters (`mkl_sparse_set_mv_hint`, etc.)~~ (done — `copy`,
+  `convert_{csr,csc,coo,bsr}`, `order`, `set_{mv,mm,sv}_hint`).
 - **PARDISO**: ~~`pardiso_getdiag`, save/restore handle pair~~ (done —
   `with_diagonal_enabled` / `get_diagonal`, `save_handle` /
   `load_handle` / `delete_handle_files`); `pardiso_64`,
