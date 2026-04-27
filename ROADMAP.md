@@ -31,7 +31,7 @@ function(s).
 | BLAS-like extensions | MVP+ | `axpby`, `imatcopy`/`omatcopy`/`omatcopy2`/`omatadd`, batched (strided) `gemm`/`trsm`/`gemv`/`dgmm`/`axpy`/`copy`/`gemm3m`; pointer-array `gemm_batch` |
 | LAPACK | Common | Linear solve, QR, LS, eigenvalue (incl. RRR + D&C), SVD, banded, packed, generalized |
 | Sparse BLAS (IE) | Common | CSR / COO / CSC / BSR construction; `mv`/`mm`/`trsv`/`optimize` + Sparse QR factor / solve; copy / convert / order / mv-mm-sv hint setters |
-| PARDISO | MVP+ | Factor + solve, multi-RHS, cached factorization, diagonal extraction, save/restore handle |
+| PARDISO | MVP+ | Factor + solve, multi-RHS, cached factorization, diagonal extraction, save/restore handle, low-level `export` |
 | DSS | Common | Real + complex (single + double precision) factor / solve, multi-RHS, statistics (timing / memory / determinant / inertia) |
 | ISS (CG, FGMRES) | MVP+ | Closure-driven mat-vec; preconditioned CG; `IssResult` with iterations / residual norms / stop reason |
 | Preconditioners | MVP | ILU0, ILUT |
@@ -68,8 +68,10 @@ Move every domain currently at MVP up to Common. Specifically:
   `convert_{csr,csc,coo,bsr}`, `order`, `set_{mv,mm,sv}_hint`).
 - **PARDISO**: ~~`pardiso_getdiag`, save/restore handle pair~~ (done —
   `with_diagonal_enabled` / `get_diagonal`, `save_handle` /
-  `load_handle` / `delete_handle_files`); `pardiso_64`,
-  `mkl_pardiso_pivot`, `pardiso_export`.
+  `load_handle` / `delete_handle_files`); ~~`pardiso_export`~~ (done
+  — low-level `export` method, but Schur complement extraction needs
+  `perm` support which `analyze_and_factorize` does not yet expose);
+  `pardiso_64`, `mkl_pardiso_pivot`, `perm` parameter.
 - **DSS**: ~~complex matrices, statistics readout~~ (done — complex
   factor/solve already covered, plus `factor_time` / `peak_memory_kb`
   / `determinant` / `inertia` etc.); generalized symmetric options.

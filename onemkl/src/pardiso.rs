@@ -357,6 +357,58 @@ impl<T: PardisoScalar> Pardiso<T> {
         Ok(())
     }
 
+    /// Export factor data (typically the Schur complement) from a
+    /// factorized handle. Wraps `pardiso_export`.
+    ///
+    /// `pardiso_export` uses a step-based protocol: invoke `step = 0`
+    /// first to obtain the size of `ia`, then allocate `ia` / `ja` /
+    /// `values` buffers and invoke `step = 1` to populate them.
+    ///
+    /// # Note on Schur complement
+    ///
+    /// To extract the Schur complement, the factorization must have
+    /// been performed with `iparm[35] = 1` **and** a non-NULL `perm`
+    /// array marking which rows / columns are in the Schur block
+    /// (`perm[i] = 1`) versus the interior (`perm[i] = 0`). The
+    /// current [`analyze_and_factorize`](Self::analyze_and_factorize)
+    /// API passes `perm = NULL`, so calling `export` for Schur
+    /// extraction will likely access invalid memory inside MKL.
+    /// Schur-complement support is tracked separately; until it
+    /// lands, this method is primarily useful as a low-level escape
+    /// hatch for callers driving the FFI directly via the raw
+    /// bindings.
+    pub fn export(
+        &mut self,
+        step: i32,
+        values: Option<&mut [T]>,
+        ia: &mut [i32],
+        ja: Option<&mut [i32]>,
+    ) -> Result<()> {
+        let step_c: c_int = step;
+        let mut error: c_int = 0;
+        let values_ptr = values
+            .map(|v| v.as_mut_ptr().cast::<core::ffi::c_void>())
+            .unwrap_or(ptr::null_mut());
+        let ja_ptr = ja
+            .map(|j| j.as_mut_ptr())
+            .unwrap_or(ptr::null_mut());
+        unsafe {
+            sys::pardiso_export(
+                self.pt.as_mut_ptr() as *mut core::ffi::c_void,
+                values_ptr,
+                ia.as_mut_ptr(),
+                ja_ptr,
+                &step_c,
+                self.iparm.as_ptr(),
+                &mut error,
+            );
+        }
+        if error != 0 {
+            return Err(Error::PardisoStatus(error));
+        }
+        Ok(())
+    }
+
     /// Delete the on-disk files written by
     /// [`save_handle`](Self::save_handle) under `dir`. Free function;
     /// does not need a live `Pardiso` instance. Wraps
