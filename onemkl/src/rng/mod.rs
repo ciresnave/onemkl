@@ -23,6 +23,7 @@ use crate::error::{Error, Result};
 use crate::util::dim_to_mkl_int;
 
 pub mod convolution;
+pub mod summary_stats;
 
 /// Basic random number generators supported by oneMKL VSL.
 ///
