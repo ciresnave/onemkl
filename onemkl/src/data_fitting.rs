@@ -5,9 +5,10 @@
 //! handle and the spline coefficient storage. The task is freed on
 //! drop.
 //!
-//! Currently only natural cubic splines are exposed; the bindings
-//! support many other spline types (Hermite, Bessel, Akima, etc.) and
-//! these will be added as separate constructors.
+//! Cubic spline subtypes covered: [`natural`](CubicSpline1d::natural),
+//! [`bessel`](CubicSpline1d::bessel), [`akima`](CubicSpline1d::akima),
+//! and [`hermite`](CubicSpline1d::hermite) (which takes user-supplied
+//! first derivatives at each knot).
 
 use core::ffi::c_int;
 use core::ptr;
@@ -174,6 +175,9 @@ pub struct CubicSpline1d<T: DataFittingScalar> {
     // task is open.
     _x: Box<[T]>,
     _y: Box<[T]>,
+    // Hermite splines need user-supplied derivatives at each knot; MKL
+    // also keeps a raw pointer into this for the task's lifetime.
+    _ic: Option<Box<[T]>>,
     // Coefficient storage. For cubic spline of n knots, MKL writes
     // 4 * (n - 1) coefficients here.
     _coeffs: Box<[T]>,
@@ -185,6 +189,67 @@ impl<T: DataFittingScalar + num_traits::Zero + Default> CubicSpline1d<T> {
     /// Build a natural cubic spline interpolating `(x[i], y[i])`.
     /// `x` must be strictly increasing.
     pub fn natural(x: Vec<T>, y: Vec<T>) -> Result<Self> {
+        Self::build(
+            x,
+            y,
+            sys::DF_PP_NATURAL as c_int,
+            sys::DF_BC_FREE_END as c_int,
+            None,
+        )
+    }
+
+    /// Build a Bessel cubic spline interpolating `(x[i], y[i])`. The
+    /// derivative at each knot is set to the slope of the parabola
+    /// through that knot and its two neighbors.
+    pub fn bessel(x: Vec<T>, y: Vec<T>) -> Result<Self> {
+        Self::build(
+            x,
+            y,
+            sys::DF_PP_BESSEL as c_int,
+            sys::DF_BC_NOT_A_KNOT as c_int,
+            None,
+        )
+    }
+
+    /// Build an Akima cubic spline interpolating `(x[i], y[i])`. Akima
+    /// splines are more robust to outliers than natural cubics
+    /// because the derivative at each knot is a weighted average of
+    /// nearby slopes.
+    pub fn akima(x: Vec<T>, y: Vec<T>) -> Result<Self> {
+        Self::build(
+            x,
+            y,
+            sys::DF_PP_AKIMA as c_int,
+            sys::DF_BC_NOT_A_KNOT as c_int,
+            None,
+        )
+    }
+
+    /// Build a Hermite cubic spline interpolating `(x[i], y[i])` with
+    /// the supplied first derivatives at each knot. `derivatives` must
+    /// have the same length as `x` and `y`.
+    pub fn hermite(x: Vec<T>, y: Vec<T>, derivatives: Vec<T>) -> Result<Self> {
+        if derivatives.len() != x.len() {
+            return Err(Error::InvalidArgument(
+                "derivatives must have the same length as x and y",
+            ));
+        }
+        Self::build(
+            x,
+            y,
+            sys::DF_PP_HERMITE as c_int,
+            sys::DF_BC_NOT_A_KNOT as c_int,
+            Some(derivatives),
+        )
+    }
+
+    fn build(
+        x: Vec<T>,
+        y: Vec<T>,
+        s_type: c_int,
+        bc_type: c_int,
+        ic: Option<Vec<T>>,
+    ) -> Result<Self> {
         if x.len() != y.len() {
             return Err(Error::InvalidArgument(
                 "x and y must have the same length",
@@ -193,12 +258,13 @@ impl<T: DataFittingScalar + num_traits::Zero + Default> CubicSpline1d<T> {
         let n = x.len();
         if n < 2 {
             return Err(Error::InvalidArgument(
-                "natural cubic spline needs at least 2 knots",
+                "cubic spline needs at least 2 knots",
             ));
         }
 
         let x_box = x.into_boxed_slice();
         let y_box = y.into_boxed_slice();
+        let ic_box: Option<Box<[T]>> = ic.map(|v| v.into_boxed_slice());
         let coeffs_box: Box<[T]> = (0..(n - 1) * sys::DF_PP_CUBIC as usize)
             .map(|_| T::default())
             .collect::<Vec<_>>()
@@ -225,18 +291,23 @@ impl<T: DataFittingScalar + num_traits::Zero + Default> CubicSpline1d<T> {
             task,
             _x: x_box,
             _y: y_box,
+            _ic: ic_box,
             _coeffs: coeffs_box,
         };
 
+        let (ic_type, ic_ptr) = match this._ic.as_ref() {
+            Some(buf) => (sys::DF_IC_1ST_DER as c_int, buf.as_ptr()),
+            None => (sys::DF_NO_IC as c_int, ptr::null()),
+        };
         let status = unsafe {
             T::df_edit_pp_spline_1d(
                 this.task,
                 sys::DF_PP_CUBIC as c_int,
-                sys::DF_PP_NATURAL as c_int,
-                sys::DF_BC_FREE_END as c_int,
+                s_type,
+                bc_type,
                 ptr::null(),
-                sys::DF_NO_IC as c_int,
-                ptr::null(),
+                ic_type,
+                ic_ptr,
                 this._coeffs.as_ptr(),
                 sys::DF_NO_HINT as c_int,
             )

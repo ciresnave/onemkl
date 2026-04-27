@@ -39,7 +39,7 @@ function(s).
 | VM (Vector Math) | Common | All major function families |
 | RNG (VSL) | Common | RAII `Stream` + 8 continuous + 4 discrete distributions; 1-D convolution / correlation tasks; summary statistics (mean / variance / min / max / sum) |
 | FFT (DFTI) | MVP+ | 1-D / 2-D / 3-D / N-D complex; real-input (CCE) variants |
-| Data fitting | MVP | Natural cubic spline |
+| Data fitting | Common | Natural / Bessel / Akima / Hermite cubic splines, with interpolate / integrate |
 | Optimization | MVP | TRNLS, TRNLSPBC, numerical Jacobian |
 | Service | Common | Version, threading, memory, verbose, finalize |
 
@@ -90,8 +90,9 @@ Move every domain currently at MVP up to Common. Specifically:
   and method codes.
 - **FFT**: multi-dimensional, real-input variants, configurable
   scaling and storage formats.
-- **Data fitting**: Hermite, Bessel, Akima, lookup / linear /
-  step-function spline types; user-supplied derivatives;
+- **Data fitting**: ~~Hermite, Bessel, Akima cubic splines;
+  user-supplied derivatives~~ (done — `CubicSpline1d::{bessel,
+  akima, hermite}`); lookup / linear / step-function spline types;
   `?SearchCells1D` and the cell-based interpolators.
 
 ### 0.3.0 — Comprehensive coverage of three priority domains
