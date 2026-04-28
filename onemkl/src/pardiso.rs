@@ -8,8 +8,8 @@
 //!
 //! The Rust API exposes a [`Pardiso`] handle that owns the internal
 //! state array and tears it down on `Drop`. CSR input is taken in
-//! 1-based form by default (oneMKL's convention; set
-//! [`PardisoBuilder::indexing`] to switch).
+//! 1-based form by default (oneMKL's convention; call
+//! [`Pardiso::with_indexing`] to switch).
 //!
 //! ```no_run
 //! use onemkl::pardiso::{Pardiso, PardisoMatrixType, IndexBase};

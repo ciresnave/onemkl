@@ -18,8 +18,7 @@
 //!   [`atanh`].
 //! - **Special**: [`erf`], [`erfc`], [`erf_inv`], [`erfc_inv`], [`erfcx`],
 //!   [`cdf_norm`], [`cdf_norm_inv`], [`lgamma`], [`tgamma`], [`exp_int1`],
-//!   Bessel ([`i0`], [`i1`], [`j0`], [`j1`], [`jn`], [`y0`], [`y1`],
-//!   [`yn`]).
+//!   Bessel ([`i0`], [`i1`], [`j0`], [`j1`], [`y0`], [`y1`]).
 //! - **Rounding**: [`floor`], [`ceil`], [`trunc`], [`round`],
 //!   [`nearby_int`], [`rint`], [`modf`], [`frac`].
 //! - **Misc**: [`copysign`], [`next_after`], [`fdim`], [`fmax`], [`fmin`],

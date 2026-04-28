@@ -63,6 +63,7 @@ modules (`error`, `enums`, `matrix`, `scalar`, `service`) are always built.
 | `lapack` | `onemkl::lapack` |
 | `optim` | `onemkl::optim` |
 | `pardiso` | `onemkl::pardiso` |
+| `pde` | `onemkl::pde` |
 | `preconditioners` | `onemkl::preconditioners` |
 | `rng` | `onemkl::rng` |
 | `sparse` | `onemkl::sparse` |

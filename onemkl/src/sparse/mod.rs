@@ -1114,7 +1114,7 @@ impl RealSparseScalar for f64 {
 impl<T: RealSparseScalar> SparseMatrix<T> {
     /// Symbolic + numerical QR factorization of the matrix. Equivalent
     /// to calling `mkl_sparse_qr_reorder` followed by
-    /// `mkl_sparse_?_qr_factorize`. After calling this, [`qr_solve`]
+    /// `mkl_sparse_?_qr_factorize`. After calling this, [`Self::qr_solve`]
     /// can solve `A * x = b` and `Aᵀ * x = b` repeatedly.
     pub fn qr_factor(&self, descr: impl Into<MatrixDescr>) -> Result<()> {
         let descr_inner = descr.into().inner;
@@ -1127,7 +1127,7 @@ impl<T: RealSparseScalar> SparseMatrix<T> {
     }
 
     /// Solve `op(A) * X = B` using the cached QR factorization.
-    /// Call [`qr_factor`] first.
+    /// Call [`Self::qr_factor`] first.
     #[allow(clippy::too_many_arguments)]
     pub fn qr_solve(
         &self,

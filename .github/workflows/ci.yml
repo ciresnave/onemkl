@@ -1,0 +1,70 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: build + test (Ubuntu, Intel oneAPI MKL)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Intel oneAPI install
+        id: cache-oneapi
+        uses: actions/cache@v4
+        with:
+          path: /opt/intel/oneapi
+          key: oneapi-mkl-2025.2-${{ runner.os }}
+
+      - name: Install Intel oneAPI MKL
+        if: steps.cache-oneapi.outputs.cache-hit != 'true'
+        run: |
+          wget -qO- https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB \
+            | sudo gpg --dearmor -o /usr/share/keyrings/oneapi-archive-keyring.gpg
+          echo "deb [signed-by=/usr/share/keyrings/oneapi-archive-keyring.gpg] https://apt.repos.intel.com/oneapi all main" \
+            | sudo tee /etc/apt/sources.list.d/oneAPI.list
+          sudo apt-get update
+          sudo apt-get install -y intel-oneapi-mkl-devel libclang-dev
+
+      - name: Source oneAPI environment
+        run: |
+          source /opt/intel/oneapi/setvars.sh
+          # Persist the env vars setvars.sh exports so subsequent
+          # steps (cargo) can find MKL headers, libs, and the
+          # runtime DLLs.
+          {
+            echo "MKLROOT=$MKLROOT"
+            echo "LD_LIBRARY_PATH=$LD_LIBRARY_PATH"
+            echo "CPATH=$CPATH"
+            echo "LIBRARY_PATH=$LIBRARY_PATH"
+          } >> "$GITHUB_ENV"
+
+      - name: Cache cargo registry + target/
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-${{ runner.os }}-${{ hashFiles('**/Cargo.toml') }}
+
+      - name: cargo build
+        run: cargo build --workspace --all-features
+
+      - name: cargo test
+        run: cargo test --workspace --all-features --no-fail-fast
+
+      - name: cargo doc (no warnings)
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: cargo doc --workspace --all-features --no-deps

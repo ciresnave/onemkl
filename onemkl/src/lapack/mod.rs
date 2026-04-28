@@ -11,9 +11,10 @@
 //!   [`posv`], [`potrf`], [`potrs`], [`sysv`] (real-only),
 //!   [`hesv`] (complex-only).
 //! - **Least squares & QR**: [`geqrf`], [`gelqf`], [`orgqr`] (real),
-//!   [`ungqr`] (complex), [`gels`], [`gelsd`].
+//!   `ungqr` (complex), [`gels`], [`gelsd`].
 //! - **Eigenvalue & SVD**: [`syev`] (real symmetric), [`heev`]
-//!   (complex Hermitian), [`geev`], [`gesdd`], [`gesvd`].
+//!   (complex Hermitian), `geev_real` / `geev_complex`, [`gesdd`],
+//!   [`gesvd`].
 //!
 //! Planned: banded variants, packed variants, generalized eigenvalue
 //! problems, generalized SVD, expert drivers, condition number, iterative

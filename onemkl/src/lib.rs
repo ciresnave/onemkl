@@ -15,13 +15,13 @@
 //! - **FFT and signal processing** — see [`fft`] (1D/2D/3D/N-D
 //!   complex and real-input transforms with configurable scaling),
 //!   [`pde`] (DCT / DST trigonometric transforms),
-//!   [`rng::convolution`](rng::convolution) (1D conv / corr).
+//!   [`rng::convolution`] (1D conv / corr).
 //! - **Statistics and random numbers** — see [`rng`] (RNG streams,
-//!   distributions) and [`rng::summary_stats`](rng::summary_stats)
+//!   distributions) and [`rng::summary_stats`]
 //!   (mean / variance / min / max / sum).
 //! - **Mixed-precision ML kernels** — see
-//!   [`blas::mixed_precision`](blas::mixed_precision) for bf16 /
-//!   fp16 / FP8 / int8 GEMMs and [`blas::jit`](blas::jit) for
+//!   [`blas::mixed_precision`] for bf16 /
+//!   fp16 / FP8 / int8 GEMMs and [`blas::jit`] for
 //!   runtime-specialized small kernels.
 //! - **Eigensolvers** — see [`lapack`] for general drivers and
 //!   [`feast`] for contour-integration solvers (find all eigenvalues

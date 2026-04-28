@@ -20,10 +20,10 @@
 //! `&[u16]` for bf16 / fp16 / hgemm inputs, `&[u8]` for FP8, `&[i8]`
 //! and `&[u8]` for int8, `&[i16]` for int16. This matches MKL's
 //! C ABI and lets callers integrate with whatever bf16 / f16 / fp8
-//! type they're already using (e.g. [`half::bf16`] from the `half`
+//! type they're already using (e.g. `half::bf16` from the `half`
 //! crate, custom newtypes, or raw bytes from `bytemuck`).
 //!
-//! Convert via [`bytemuck::cast_slice`] or
+//! Convert via `bytemuck::cast_slice` or
 //! [`std::slice::from_raw_parts`]:
 //!
 //! ```ignore

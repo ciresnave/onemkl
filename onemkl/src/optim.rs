@@ -337,7 +337,7 @@ where
     result
 }
 
-/// Function-pointer type for the direct-callback form of [`djacobi`].
+/// Function-pointer type for the direct-callback form of `djacobi`.
 /// MKL invokes this once per Jacobian column, passing pointers to
 /// dimensions, the perturbed `x`, and the output residual.
 pub type DjacobiCallback = unsafe extern "C" fn(
