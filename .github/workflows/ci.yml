@@ -14,14 +14,16 @@ jobs:
     name: build + test (Ubuntu, Intel oneAPI MKL)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
+      # Install Rust without a third-party action so we don't pin
+      # to an older Node runtime.
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        run: rustup toolchain install stable --profile minimal --no-self-update
 
       - name: Cache Intel oneAPI install
         id: cache-oneapi
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: /opt/intel/oneapi
           key: oneapi-mkl-2025.2-${{ runner.os }}
@@ -50,7 +52,7 @@ jobs:
           } >> "$GITHUB_ENV"
 
       - name: Cache cargo registry + target/
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.cargo/registry
@@ -58,13 +60,19 @@ jobs:
             target
           key: cargo-${{ runner.os }}-${{ hashFiles('**/Cargo.toml') }}
 
+      # Default features already enable every per-domain wrapper
+      # plus exactly one of lp64 / threading-sequential / link-dynamic.
+      # Don't use --all-features here: lp64 vs ilp64, the three
+      # threading layers, and dynamic vs static linking are
+      # mutually exclusive and the build script (correctly) rejects
+      # the conflicting combinations.
       - name: cargo build
-        run: cargo build --workspace --all-features
+        run: cargo build --workspace
 
       - name: cargo test
-        run: cargo test --workspace --all-features --no-fail-fast
+        run: cargo test --workspace --no-fail-fast
 
       - name: cargo doc (no warnings)
         env:
           RUSTDOCFLAGS: -D warnings
-        run: cargo doc --workspace --all-features --no-deps
+        run: cargo doc --workspace --no-deps
