@@ -1182,7 +1182,7 @@ fn check_sparse(status: sparse_status_t::Type) -> Result<()> {
             sparse_status_t::SPARSE_STATUS_EXECUTION_FAILED => SparseStatus::ExecutionFailed,
             sparse_status_t::SPARSE_STATUS_INTERNAL_ERROR => SparseStatus::InternalError,
             sparse_status_t::SPARSE_STATUS_NOT_SUPPORTED => SparseStatus::NotSupported,
-            other => SparseStatus::Unknown(other),
+            other => SparseStatus::Unknown(other as i32),
         };
         Err(Error::SparseStatus(s))
     }

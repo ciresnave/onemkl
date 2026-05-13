@@ -23,10 +23,11 @@
 //! `?csrilu0` / `?csrilut` for other types).
 
 use core::ffi::c_int;
+use core::ptr;
 
 use onemkl_sys as sys;
 
-use crate::error::{Error, Result};
+use crate::error::{Error, Result, SparseStatus};
 
 /// Compute the ILU(0) factorization of a square CSR matrix.
 ///
@@ -163,10 +164,11 @@ pub fn ilut(
 }
 
 /// Apply an ILU(0) or ILUT preconditioner: compute `M⁻¹ * v` for the
-/// factor stored in `alu` / `ia` / `ja`. The factor combines unit-lower
-/// `L` (implicit unit diagonal) with upper-triangular `U` in standard
-/// ILU storage; the function performs two triangular solves
-/// (`mkl_dcsrtrsv` for `L` then `U`) to produce the result.
+/// factor stored in `alu` / `ia` / `ja`. The factor combines
+/// unit-lower `L` (implicit unit diagonal) with upper-triangular `U`
+/// in standard ILU storage; the function performs two triangular
+/// solves via the Inspector-Executor sparse API to produce the
+/// result.
 ///
 /// `v` is the input vector. Returns a freshly allocated solution
 /// vector of length `n`.
@@ -183,9 +185,7 @@ pub fn apply_ilu(
         ));
     }
     if v.len() != n {
-        return Err(Error::InvalidArgument(
-            "v must have length n",
-        ));
+        return Err(Error::InvalidArgument("v must have length n"));
     }
     if alu.len() != ja.len() {
         return Err(Error::InvalidArgument(
@@ -196,39 +196,93 @@ pub fn apply_ilu(
     let mut tmp = vec![0.0_f64; n];
     let mut out = vec![0.0_f64; n];
 
-    // L * tmp = v, with unit diagonal.
-    let uplo_l = b'L' as core::ffi::c_char;
-    let trans = b'N' as core::ffi::c_char;
-    let diag_unit = b'U' as core::ffi::c_char;
-    unsafe {
-        sys::mkl_dcsrtrsv(
-            &uplo_l,
-            &trans,
-            &diag_unit,
-            &n_i,
-            alu.as_ptr(),
-            ia.as_ptr(),
-            ja.as_ptr(),
+    // Build a CSR handle around the caller's borrowed buffers. The
+    // FFI takes the index / value pointers as *mut even though MKL
+    // does not mutate them during a triangular solve; casting away
+    // const is safe here.
+    let mut handle: sys::sparse_matrix_t = ptr::null_mut();
+    let rows_start_ptr = ia.as_ptr() as *mut c_int;
+    let rows_end_ptr = unsafe { rows_start_ptr.add(1) };
+    let status = unsafe {
+        sys::mkl_sparse_d_create_csr(
+            &mut handle,
+            sys::sparse_index_base_t::SPARSE_INDEX_BASE_ONE,
+            n_i,
+            n_i,
+            rows_start_ptr,
+            rows_end_ptr,
+            ja.as_ptr() as *mut c_int,
+            alu.as_ptr() as *mut f64,
+        )
+    };
+    check_sparse(status)?;
+
+    // L * tmp = v, lower triangle with implicit unit diagonal.
+    let descr_l = sys::matrix_descr {
+        type_: sys::sparse_matrix_type_t::SPARSE_MATRIX_TYPE_TRIANGULAR,
+        mode: sys::sparse_fill_mode_t::SPARSE_FILL_MODE_LOWER,
+        diag: sys::sparse_diag_type_t::SPARSE_DIAG_UNIT,
+    };
+    let status = unsafe {
+        sys::mkl_sparse_d_trsv(
+            sys::sparse_operation_t::SPARSE_OPERATION_NON_TRANSPOSE,
+            1.0,
+            handle,
+            descr_l,
             v.as_ptr(),
             tmp.as_mut_ptr(),
-        );
+        )
+    };
+    if let Err(e) = check_sparse(status) {
+        unsafe {
+            let _ = sys::mkl_sparse_destroy(handle);
+        }
+        return Err(e);
     }
 
-    // U * out = tmp, non-unit diagonal.
-    let uplo_u = b'U' as core::ffi::c_char;
-    let diag_nonunit = b'N' as core::ffi::c_char;
-    unsafe {
-        sys::mkl_dcsrtrsv(
-            &uplo_u,
-            &trans,
-            &diag_nonunit,
-            &n_i,
-            alu.as_ptr(),
-            ia.as_ptr(),
-            ja.as_ptr(),
+    // U * out = tmp, upper triangle with explicit non-unit diagonal.
+    let descr_u = sys::matrix_descr {
+        type_: sys::sparse_matrix_type_t::SPARSE_MATRIX_TYPE_TRIANGULAR,
+        mode: sys::sparse_fill_mode_t::SPARSE_FILL_MODE_UPPER,
+        diag: sys::sparse_diag_type_t::SPARSE_DIAG_NON_UNIT,
+    };
+    let status = unsafe {
+        sys::mkl_sparse_d_trsv(
+            sys::sparse_operation_t::SPARSE_OPERATION_NON_TRANSPOSE,
+            1.0,
+            handle,
+            descr_u,
             tmp.as_ptr(),
             out.as_mut_ptr(),
-        );
+        )
+    };
+    let solve_result = check_sparse(status);
+
+    unsafe {
+        let _ = sys::mkl_sparse_destroy(handle);
     }
+    solve_result?;
     Ok(out)
+}
+
+#[inline]
+fn check_sparse(status: sys::sparse_status_t::Type) -> Result<()> {
+    if status == sys::sparse_status_t::SPARSE_STATUS_SUCCESS {
+        Ok(())
+    } else {
+        let s = match status {
+            sys::sparse_status_t::SPARSE_STATUS_NOT_INITIALIZED => {
+                SparseStatus::NotInitialized
+            }
+            sys::sparse_status_t::SPARSE_STATUS_ALLOC_FAILED => SparseStatus::AllocFailed,
+            sys::sparse_status_t::SPARSE_STATUS_INVALID_VALUE => SparseStatus::InvalidValue,
+            sys::sparse_status_t::SPARSE_STATUS_EXECUTION_FAILED => {
+                SparseStatus::ExecutionFailed
+            }
+            sys::sparse_status_t::SPARSE_STATUS_INTERNAL_ERROR => SparseStatus::InternalError,
+            sys::sparse_status_t::SPARSE_STATUS_NOT_SUPPORTED => SparseStatus::NotSupported,
+            other => SparseStatus::Unknown(other as i32),
+        };
+        Err(Error::SparseStatus(s))
+    }
 }

@@ -49,10 +49,15 @@ pub enum JitStatus {
 impl JitStatus {
     #[inline]
     fn from_raw(status: sys::mkl_jit_status_t::Type) -> Result<Self> {
+        // Compare against the bindgen-typed constants directly so
+        // this works on both Linux (where the type is u32) and
+        // Windows (where it's i32).
         match status {
-            s if s == sys::mkl_jit_status_t::MKL_JIT_SUCCESS as c_int => Ok(Self::Compiled),
-            s if s == sys::mkl_jit_status_t::MKL_NO_JIT as c_int => Ok(Self::Fallback),
-            other => Err(Error::LapackComputationFailure { info: other }),
+            s if s == sys::mkl_jit_status_t::MKL_JIT_SUCCESS => Ok(Self::Compiled),
+            s if s == sys::mkl_jit_status_t::MKL_NO_JIT => Ok(Self::Fallback),
+            other => Err(Error::LapackComputationFailure {
+                info: other as i32,
+            }),
         }
     }
 }

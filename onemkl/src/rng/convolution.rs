@@ -38,12 +38,14 @@ pub enum ConvMode {
 impl ConvMode {
     #[inline]
     fn as_int(self) -> c_int {
-        let v = match self {
-            Self::Auto => sys::VSL_CONV_MODE_AUTO,
-            Self::Direct => sys::VSL_CONV_MODE_DIRECT,
-            Self::Fft => sys::VSL_CONV_MODE_FFT,
-        };
-        v as c_int
+        // Cast each constant individually so the match arms are
+        // type-uniform regardless of whether bindgen typed the
+        // underlying constant as i32 or u32.
+        match self {
+            Self::Auto => sys::VSL_CONV_MODE_AUTO as c_int,
+            Self::Direct => sys::VSL_CONV_MODE_DIRECT as c_int,
+            Self::Fft => sys::VSL_CONV_MODE_FFT as c_int,
+        }
     }
 }
 
@@ -62,12 +64,11 @@ pub enum CorrMode {
 impl CorrMode {
     #[inline]
     fn as_int(self) -> c_int {
-        let v = match self {
-            Self::Auto => sys::VSL_CORR_MODE_AUTO,
-            Self::Direct => sys::VSL_CORR_MODE_DIRECT,
-            Self::Fft => sys::VSL_CORR_MODE_FFT,
-        };
-        v as c_int
+        match self {
+            Self::Auto => sys::VSL_CORR_MODE_AUTO as c_int,
+            Self::Direct => sys::VSL_CORR_MODE_DIRECT as c_int,
+            Self::Fft => sys::VSL_CORR_MODE_FFT as c_int,
+        }
     }
 }
 
