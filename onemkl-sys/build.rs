@@ -181,21 +181,21 @@ impl Config {
         // layer, and `mkl_core`) don't record cross-deps in their own
         // DT_NEEDED tags — every consumer must link all three together
         // and the dynamic linker has to keep all three in the
-        // executable's needed list. GNU ld defaults to `--as-needed` and
-        // strips `mkl_core` from the binary because nothing in user code
-        // references it directly; symbols inside `mkl_intel_*` then fail
-        // to resolve at runtime (`undefined symbol: mkl_blas_dgemm`).
-        // Cargo's `rustc-link-arg` emits flags in order on the link
-        // command line, so emit `--no-as-needed`, the three libs as raw
-        // `-l` link-args, and `--as-needed` to restore the default — all
-        // adjacent. Skip the usual `rustc-link-lib` route for these three
-        // libs on Linux dynamic builds so we don't get duplicate entries
-        // outside the protected block.
+        // executable's needed list. GNU ld and rust-lld default to
+        // `--as-needed`, which strips `mkl_core` from the binary because
+        // nothing in user code references it directly; symbols inside
+        // `mkl_intel_*` then fail to resolve at runtime with
+        // `undefined symbol: mkl_blas_dgemm`. Plain `rustc-link-arg`
+        // flags end up after rustc's own `-l` flags, so a positional
+        // `--no-as-needed` there has no effect; passing each library by
+        // absolute path as a link-arg avoids the rustc lib-resolution
+        // path entirely and lets us bracket them with the flag.
         if self.target_os == "linux" && self.linkage == Linkage::Dynamic {
             println!("cargo:rustc-link-arg=-Wl,--no-as-needed");
-            println!("cargo:rustc-link-arg=-l{interface_lib}");
-            println!("cargo:rustc-link-arg=-l{threading_lib}");
-            println!("cargo:rustc-link-arg=-lmkl_core");
+            for name in [interface_lib, threading_lib, "mkl_core"] {
+                let so = mkl.lib_dir.join(format!("lib{name}.so"));
+                println!("cargo:rustc-link-arg={}", so.display());
+            }
             println!("cargo:rustc-link-arg=-Wl,--as-needed");
         } else {
             link(kind, &format!("{interface_lib}{suffix}"));
