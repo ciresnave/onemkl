@@ -28,7 +28,10 @@ fn main() {
         return;
     }
 
-    let lib_dir = match env::var_os("DEP_ONEMKL_SYS_LIB") {
+    // `onemkl-sys` declares `links = "mkl"` and emits `cargo:lib=<dir>`,
+    // which Cargo turns into `DEP_MKL_LIB` for downstream build scripts.
+    println!("cargo:rerun-if-env-changed=DEP_MKL_LIB");
+    let lib_dir = match env::var_os("DEP_MKL_LIB") {
         Some(v) => PathBuf::from(v),
         None => return,
     };
