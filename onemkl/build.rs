@@ -55,5 +55,12 @@ fn main() {
         let so = lib_dir.join(format!("lib{name}.so"));
         println!("cargo:rustc-link-arg={}", so.display());
     }
+    // libm / libpthread / libdl are called from inside `mkl_core` (log,
+    // cos, mutex primitives, dlopen for runtime dispatch). They need to
+    // be in the binary's DT_NEEDED too, not just on the link line as
+    // throwaway --as-needed references.
+    for sys_lib in ["m", "pthread", "dl"] {
+        println!("cargo:rustc-link-arg=-l{sys_lib}");
+    }
     println!("cargo:rustc-link-arg=-Wl,--as-needed");
 }

@@ -187,12 +187,16 @@ impl Config {
         // (default `--as-needed`) strips `mkl_core` from any executable
         // that doesn't reference it directly. That causes runtime
         // failures inside `mkl_intel_*` (`undefined symbol:
-        // mkl_blas_dgemm`). The fix — wrapping the libs in
-        // `--no-as-needed` — has to be emitted from a crate that owns
-        // the final executable's link step (Cargo's `rustc-link-arg`
-        // doesn't propagate from a transitive library). See
-        // `onemkl/build.rs`, which re-emits these three libs by path
-        // inside a `--no-as-needed` group.
+        // mkl_blas_dgemm`) and `mkl_core` (`undefined symbol: log`,
+        // `cos`). Wrap the layered libs plus libm/pthread/dl in a
+        // `--no-as-needed` block so they all end up in DT_NEEDED.
+        // Cargo's `rustc-link-arg` only reaches artifacts of this crate
+        // (notably the `smoke` integration test in `onemkl-sys/tests/`);
+        // downstream crates need their own copy of the wrap. See
+        // `onemkl/build.rs` for the matching emission.
+        if self.target_os == "linux" && self.linkage == Linkage::Dynamic {
+            emit_linux_as_needed_wrap(mkl, interface_lib, threading_lib);
+        }
 
         // MPI-dependent additions.
         if self.mpi_features.scalapack {
@@ -481,6 +485,21 @@ fn build_wrapper(out_dir: &Path, mpi: &MpiFeatures) -> PathBuf {
 
 fn link(kind: &str, name: &str) {
     println!("cargo:rustc-link-lib={kind}={name}");
+}
+
+/// Emit the `--no-as-needed` wrap that forces the layered MKL shared
+/// libraries and the libm/pthread/dl trio into the binary's DT_NEEDED.
+/// See the call site in `Config::emit_links` for the rationale.
+fn emit_linux_as_needed_wrap(mkl: &MklPaths, interface_lib: &str, threading_lib: &str) {
+    println!("cargo:rustc-link-arg=-Wl,--no-as-needed");
+    for name in [interface_lib, threading_lib, "mkl_core"] {
+        let so = mkl.lib_dir.join(format!("lib{name}.so"));
+        println!("cargo:rustc-link-arg={}", so.display());
+    }
+    for sys_lib in ["m", "pthread", "dl"] {
+        println!("cargo:rustc-link-arg=-l{sys_lib}");
+    }
+    println!("cargo:rustc-link-arg=-Wl,--as-needed");
 }
 
 fn cfg_feature(name: &str) -> bool {
