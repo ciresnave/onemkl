@@ -169,6 +169,7 @@ impl Config {
             Interface::Lp64 => "mkl_intel_lp64",
             Interface::Ilp64 => "mkl_intel_ilp64",
         };
+        link(kind, &format!("{interface_lib}{suffix}"));
 
         // Threading layer.
         let threading_lib = match self.threading {
@@ -176,32 +177,22 @@ impl Config {
             Threading::IntelOpenMp => "mkl_intel_thread",
             Threading::Tbb => "mkl_tbb_thread",
         };
+        link(kind, &format!("{threading_lib}{suffix}"));
 
-        // MKL's three layered shared libs (`mkl_intel_*`, the threading
-        // layer, and `mkl_core`) don't record cross-deps in their own
-        // DT_NEEDED tags — every consumer must link all three together
-        // and the dynamic linker has to keep all three in the
-        // executable's needed list. GNU ld and rust-lld default to
-        // `--as-needed`, which strips `mkl_core` from the binary because
-        // nothing in user code references it directly; symbols inside
-        // `mkl_intel_*` then fail to resolve at runtime with
-        // `undefined symbol: mkl_blas_dgemm`. Plain `rustc-link-arg`
-        // flags end up after rustc's own `-l` flags, so a positional
-        // `--no-as-needed` there has no effect; passing each library by
-        // absolute path as a link-arg avoids the rustc lib-resolution
-        // path entirely and lets us bracket them with the flag.
-        if self.target_os == "linux" && self.linkage == Linkage::Dynamic {
-            println!("cargo:rustc-link-arg=-Wl,--no-as-needed");
-            for name in [interface_lib, threading_lib, "mkl_core"] {
-                let so = mkl.lib_dir.join(format!("lib{name}.so"));
-                println!("cargo:rustc-link-arg={}", so.display());
-            }
-            println!("cargo:rustc-link-arg=-Wl,--as-needed");
-        } else {
-            link(kind, &format!("{interface_lib}{suffix}"));
-            link(kind, &format!("{threading_lib}{suffix}"));
-            link(kind, &format!("mkl_core{suffix}"));
-        }
+        // Computational core.
+        link(kind, &format!("mkl_core{suffix}"));
+
+        // On Linux the three layered MKL shared libs don't record
+        // cross-deps in their own DT_NEEDED tags, so GNU ld / rust-lld
+        // (default `--as-needed`) strips `mkl_core` from any executable
+        // that doesn't reference it directly. That causes runtime
+        // failures inside `mkl_intel_*` (`undefined symbol:
+        // mkl_blas_dgemm`). The fix — wrapping the libs in
+        // `--no-as-needed` — has to be emitted from a crate that owns
+        // the final executable's link step (Cargo's `rustc-link-arg`
+        // doesn't propagate from a transitive library). See
+        // `onemkl/build.rs`, which re-emits these three libs by path
+        // inside a `--no-as-needed` group.
 
         // MPI-dependent additions.
         if self.mpi_features.scalapack {

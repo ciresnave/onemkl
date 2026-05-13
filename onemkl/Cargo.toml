@@ -11,6 +11,7 @@ keywords.workspace = true
 categories.workspace = true
 description = "Safe, idiomatic Rust wrapper over Intel oneAPI Math Kernel Library (oneMKL)."
 readme = "README.md"
+build = "build.rs"
 
 [features]
 # Default = the standard build-config trio, plus every per-domain feature.
