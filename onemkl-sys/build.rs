@@ -155,6 +155,17 @@ impl Config {
     fn emit_links(&self, mkl: &MklPaths) {
         println!("cargo:rustc-link-search=native={}", mkl.lib_dir.display());
 
+        // MKL's layered libraries don't record cross-dependencies in their
+        // own DT_NEEDED tags — every consumer must link the interface,
+        // threading, and core libs together. GNU ld with `--as-needed`
+        // (the default on most modern Linux distros) drops libs the
+        // executable doesn't reference directly, which strips `mkl_core`
+        // and breaks runtime symbol resolution inside `mkl_intel_*`. Force
+        // it off before the MKL `-l` flags arrive on the command line.
+        if self.target_os == "linux" && self.linkage == Linkage::Dynamic {
+            println!("cargo:rustc-link-arg=-Wl,--no-as-needed");
+        }
+
         let suffix = match self.linkage {
             Linkage::Dynamic if self.is_msvc() => "_dll",
             _ => "",
