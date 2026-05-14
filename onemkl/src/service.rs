@@ -356,12 +356,15 @@ impl<T> core::ops::DerefMut for AlignedBuffer<T> {
 /// Vector ISA level. Pass to [`enable_instructions`] to force MKL to
 /// dispatch to a specific code path (e.g. for benchmarking, or to work
 /// around a buggy fallback).
+///
+/// MKL has gradually removed dispatch entries for older or
+/// Xeon-Phi-only ISAs (original AVX, AVX-512-MIC) — newer headers
+/// (≥ MKL 2026) drop those symbols entirely, so they're not exposed
+/// here.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum IsaLevel {
     /// SSE4.2 (baseline x86-64-v2).
     Sse42,
-    /// Original AVX.
-    Avx,
     /// AVX2.
     Avx2,
     /// AVX2 enabled-1 (atom-style extension).
@@ -378,10 +381,6 @@ pub enum IsaLevel {
     Avx512E4,
     /// AVX-512 enabled-5.
     Avx512E5,
-    /// AVX-512 MIC (Knights Landing).
-    Avx512Mic,
-    /// AVX-512 MIC enabled-1.
-    Avx512MicE1,
     /// AVX10.
     Avx10,
 }
@@ -391,7 +390,6 @@ impl IsaLevel {
     fn as_int(self) -> c_int {
         let v = match self {
             Self::Sse42 => sys::MKL_ENABLE_SSE4_2,
-            Self::Avx => sys::MKL_ENABLE_AVX,
             Self::Avx2 => sys::MKL_ENABLE_AVX2,
             Self::Avx2E1 => sys::MKL_ENABLE_AVX2_E1,
             Self::Avx512 => sys::MKL_ENABLE_AVX512,
@@ -400,8 +398,6 @@ impl IsaLevel {
             Self::Avx512E3 => sys::MKL_ENABLE_AVX512_E3,
             Self::Avx512E4 => sys::MKL_ENABLE_AVX512_E4,
             Self::Avx512E5 => sys::MKL_ENABLE_AVX512_E5,
-            Self::Avx512Mic => sys::MKL_ENABLE_AVX512_MIC,
-            Self::Avx512MicE1 => sys::MKL_ENABLE_AVX512_MIC_E1,
             Self::Avx10 => sys::MKL_ENABLE_AVX10,
         };
         v as c_int
