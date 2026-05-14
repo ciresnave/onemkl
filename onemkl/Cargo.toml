@@ -13,6 +13,15 @@ description = "Safe, idiomatic Rust wrapper over Intel oneAPI Math Kernel Librar
 readme = "README.md"
 build = "build.rs"
 
+# `onemkl-sys` falls back to vendored bindings when `DOCS_RS=1`, so
+# this crate's documentation builds in the docs.rs sandbox without an
+# Intel oneMKL install. The `--no-as-needed` link wrap in this
+# crate's `build.rs` is also a no-op there (no MKL path, no link
+# step).
+[package.metadata.docs.rs]
+default-target = "x86_64-unknown-linux-gnu"
+rustdoc-args = ["--cfg", "docsrs"]
+
 [features]
 # Default = the standard build-config trio, plus every per-domain feature.
 # Users who want a minimal build can `default-features = false` and select

@@ -14,6 +14,14 @@ readme = "README.md"
 links = "mkl"
 build = "build.rs"
 
+# docs.rs runs in a sandbox without Intel oneMKL installed. The build
+# script detects the `DOCS_RS` env var docs.rs sets and reads the
+# vendored `src/vendored_bindings.rs` instead of running bindgen, so
+# documentation can build with no MKL toolchain present.
+[package.metadata.docs.rs]
+default-target = "x86_64-unknown-linux-gnu"
+rustdoc-args = ["--cfg", "docsrs"]
+
 [lib]
 name = "onemkl_sys"
 

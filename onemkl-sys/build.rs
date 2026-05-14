@@ -6,6 +6,12 @@
 //!    the right preprocessor defines for the selected interface layer.
 //! 3. Emit a link line matching the selected interface / threading / linkage
 //!    feature combination.
+//!
+//! On docs.rs (`DOCS_RS=1`) we skip MKL entirely and copy the vendored
+//! `src/vendored_bindings.rs` into `OUT_DIR/bindings.rs` so the crate
+//! still produces documentable items without an MKL install or link
+//! step. Same path can be opted into elsewhere by exporting
+//! `ONEMKL_SYS_USE_VENDORED_BINDINGS=1`.
 
 use std::env;
 use std::path::{Path, PathBuf};
@@ -14,12 +20,20 @@ use std::process;
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-changed=wrapper.h");
+    println!("cargo:rerun-if-changed=src/vendored_bindings.rs");
     println!("cargo:rerun-if-env-changed=MKLROOT");
     println!("cargo:rerun-if-env-changed=ONEAPI_ROOT");
     println!("cargo:rerun-if-env-changed=ONEMKL_SYS_INCLUDE_DIR");
     println!("cargo:rerun-if-env-changed=ONEMKL_SYS_LIB_DIR");
     println!("cargo:rerun-if-env-changed=ONEMKL_SYS_OMP_LIB_DIR");
     println!("cargo:rerun-if-env-changed=ONEMKL_SYS_TBB_LIB_DIR");
+    println!("cargo:rerun-if-env-changed=DOCS_RS");
+    println!("cargo:rerun-if-env-changed=ONEMKL_SYS_USE_VENDORED_BINDINGS");
+
+    if is_docs_only_build() {
+        use_vendored_bindings();
+        return;
+    }
 
     let cfg = Config::from_env();
     cfg.validate_features();
@@ -27,6 +41,28 @@ fn main() {
     let mkl = MklPaths::locate(&cfg);
     cfg.emit_links(&mkl);
     cfg.generate_bindings(&mkl);
+}
+
+fn is_docs_only_build() -> bool {
+    env::var_os("DOCS_RS").is_some()
+        || env::var_os("ONEMKL_SYS_USE_VENDORED_BINDINGS").is_some()
+}
+
+/// Copy the vendored bindings into `OUT_DIR` so `lib.rs`'s `include!`
+/// works without ever running bindgen or touching the linker.
+fn use_vendored_bindings() {
+    let out_dir = PathBuf::from(env::var_os("OUT_DIR").expect("OUT_DIR not set"));
+    let src = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set"))
+        .join("src")
+        .join("vendored_bindings.rs");
+    let dst = out_dir.join("bindings.rs");
+    std::fs::copy(&src, &dst).unwrap_or_else(|e| {
+        fatal(&format!(
+            "failed to copy vendored bindings from {} to {}: {e}",
+            src.display(),
+            dst.display()
+        ))
+    });
 }
 
 /// Resolved feature configuration.
