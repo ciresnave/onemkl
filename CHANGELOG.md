@@ -6,6 +6,65 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## Unreleased
 
+### Added — second-pass ML-focused surface expansion
+
+- **`Stream` distribution coverage** rounded out with the
+  distributions ML training and inference actually reach for:
+  - `gumbel(out, displacement, scale)` (min-Gumbel — negate samples
+    for the max-Gumbel used in Gumbel-softmax),
+  - `laplace(out, displacement, scale)`,
+  - `rayleigh(out, displacement, scale)`,
+  - `chi_square(out, ndf)`,
+  - `gaussian_mv(out, dimen, MatrixStorage, mean, cov_factor)` for
+    multivariate normal sampling from a Cholesky factor (full /
+    packed / diagonal storage),
+  - `truncated_normal(out, mean, sigma, lo, hi)` (and
+    `truncated_normal_f32`) via rejection sampling on top of
+    `gaussian`,
+  - `dirichlet(out, alpha)` derived from a sequence of `gamma`
+    draws,
+  - `multinomial(out, ntrial, p)` and `categorical(out, p)` for
+    LLM-style token sampling,
+  - `geometric(out, p)`, `hypergeometric(out, lot, marked, sample)`,
+    `neg_binomial(out, a, p)`.
+- **Quasi-random sequences** via `Stream::quasi_random(brng,
+  dimension)` plus new `BasicRng::Sobol`, `Niederreiter`, `Ars5`,
+  `Rdrand` variants. Standard primitive for Quasi-Monte Carlo
+  integration, Bayesian optimization, and MC dropout uncertainty.
+- **Mixed-precision iterative-refinement LAPACK** in
+  `lapack`: `iter_refine_gesv_f64`, `iter_refine_posv_f64`,
+  `iter_refine_gesv_c64`, `iter_refine_posv_c64` (wrap
+  `LAPACKE_dsgesv` / `LAPACKE_dsposv` / `LAPACKE_zcgesv` /
+  `LAPACKE_zcposv`). Returns an `IterRefineOutcome` with the
+  refinement iteration count.
+- **Sparse SYRK and SYPR** on `SparseMatrix<T>`: `syrk(op)` for
+  `op(A)·op(A)ᵀ` (Gram matrix / normal equations) and
+  `sypr(op, B, descrB)` for the symmetric triple product
+  `op(A)·B·op(A)ᵀ` (GNN message passing, reduced-order models).
+- **Summary-stats preprocessing extensions** on `SummaryStats<T>`:
+  `quantiles(orders)`, `stream_quantiles(orders, params)`
+  (Zhang-Wang streaming estimator), `robust_covariance_tbs(params)`
+  (Tukey biweight S-estimator), `outliers_bacon(params)` for
+  per-observation outlier weights, and `impute_missing(params)` for
+  NaN-marked imputation. Sensible defaults via
+  `SummaryStats::<f64>::bacon_default_params()` and
+  `SummaryStats::<f64>::impute_default_params()`.
+- **Service module expansion**:
+  - `AlignedBuffer<T>` — owned `MKL_malloc`-backed buffer with
+    user-specified alignment, `Deref<Target = [T]>` access, freed
+    via `MKL_free` on drop. SIMD-aligned (e.g. 64-byte for
+    AVX-512) tensor backing without copies.
+  - `ThreadCountGuard` — RAII guard that sets the calling thread's
+    local MKL thread count on construction and restores it on
+    drop.
+  - `enable_instructions(IsaLevel)` with an `IsaLevel` enum
+    covering `Sse42`, `Avx`, `Avx2`, `Avx512`, `Avx10`, and all
+    the enabled-N variants — wraps `MKL_Enable_Instructions`.
+  - `cpu_clocks()`, `cpu_frequency_ghz()`, `max_cpu_frequency_ghz()`
+    for per-call timing diagnostics.
+- **New error variant** `Error::AllocationFailure` for
+  `MKL_malloc`-style failures.
+
 ### Added — every major oneMKL domain has a safe Rust wrapper
 
 #### BLAS and BLAS-like extensions (`blas`)

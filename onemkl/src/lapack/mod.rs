@@ -2055,6 +2055,201 @@ pub struct HouseholderReflector<T> {
     pub tau: T,
 }
 
+// =====================================================================
+// Mixed-precision iterative refinement
+// =====================================================================
+
+/// Outcome of a mixed-precision iterative-refinement solve.
+///
+/// Returned by [`iter_refine_gesv_f64`], [`iter_refine_posv_f64`],
+/// and their complex counterparts. The `iter` field encodes whether
+/// MKL stayed on the fast single-precision path (`iter >= 0`,
+/// converged in that many refinement steps) or fell back to a
+/// straight double-precision factorization (`iter < 0`); the
+/// double-precision fallback always produces a correct answer so a
+/// negative `iter` is informational, not an error.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct IterRefineOutcome {
+    /// Number of iterative-refinement steps performed. Negative
+    /// values indicate MKL fell back to plain double precision.
+    pub iter: i32,
+}
+
+/// Solve `A · X = B` (general `A`) by factoring in single precision
+/// and iteratively refining to double precision. Wraps
+/// `LAPACKE_dsgesv`.
+///
+/// On success `x` holds the refined double-precision solution. `a`
+/// is overwritten with the single-precision LU factorization (and
+/// converted back), and `b` may be modified internally. `ipiv` must
+/// have at least `n` entries.
+///
+/// Mixed-precision iterative refinement is roughly 2× faster than a
+/// straight double-precision solve for large well-conditioned
+/// systems, which is why it's a default choice for second-order
+/// optimizers, Gauss-Newton steps, and Levenberg-Marquardt.
+pub fn iter_refine_gesv_f64(
+    a: &mut MatrixMut<'_, f64>,
+    ipiv: &mut [i32],
+    b: &mut MatrixMut<'_, f64>,
+    x: &mut MatrixMut<'_, f64>,
+) -> Result<IterRefineOutcome> {
+    let n = ensure_square(a)?;
+    let layout = ensure_layout(&[a.layout(), b.layout(), x.layout()])?;
+    if b.rows() != n {
+        return Err(Error::InvalidArgument("B must have n rows"));
+    }
+    if x.rows() != n || x.cols() != b.cols() {
+        return Err(Error::InvalidArgument(
+            "X must have the same shape as B",
+        ));
+    }
+    if ipiv.len() < n {
+        return Err(Error::InvalidArgument("ipiv must have at least n entries"));
+    }
+    let mut iter: core::ffi::c_int = 0;
+    let info = unsafe {
+        onemkl_sys::LAPACKE_dsgesv(
+            layout.as_lapack(),
+            dim_to_mkl_int(n)?,
+            dim_to_mkl_int(b.cols())?,
+            a.as_mut_ptr(),
+            dim_to_mkl_int(a.leading_dim())?,
+            ipiv.as_mut_ptr(),
+            b.as_mut_ptr(),
+            dim_to_mkl_int(b.leading_dim())?,
+            x.as_mut_ptr(),
+            dim_to_mkl_int(x.leading_dim())?,
+            &mut iter,
+        )
+    };
+    check_info(info)?;
+    Ok(IterRefineOutcome { iter })
+}
+
+/// Solve `A · X = B` (symmetric/Hermitian positive-definite `A`) by
+/// factoring in single precision and iteratively refining to double.
+/// Wraps `LAPACKE_dsposv`.
+///
+/// `a` must contain only the `uplo` triangle of an SPD matrix on
+/// entry; it's overwritten with the Cholesky factor. `x` receives
+/// the refined solution.
+pub fn iter_refine_posv_f64(
+    uplo: UpLo,
+    a: &mut MatrixMut<'_, f64>,
+    b: &mut MatrixMut<'_, f64>,
+    x: &mut MatrixMut<'_, f64>,
+) -> Result<IterRefineOutcome> {
+    let n = ensure_square(a)?;
+    let layout = ensure_layout(&[a.layout(), b.layout(), x.layout()])?;
+    if b.rows() != n {
+        return Err(Error::InvalidArgument("B must have n rows"));
+    }
+    if x.rows() != n || x.cols() != b.cols() {
+        return Err(Error::InvalidArgument(
+            "X must have the same shape as B",
+        ));
+    }
+    let mut iter: core::ffi::c_int = 0;
+    let info = unsafe {
+        onemkl_sys::LAPACKE_dsposv(
+            layout.as_lapack(),
+            uplo.as_char() as core::ffi::c_char,
+            dim_to_mkl_int(n)?,
+            dim_to_mkl_int(b.cols())?,
+            a.as_mut_ptr(),
+            dim_to_mkl_int(a.leading_dim())?,
+            b.as_mut_ptr(),
+            dim_to_mkl_int(b.leading_dim())?,
+            x.as_mut_ptr(),
+            dim_to_mkl_int(x.leading_dim())?,
+            &mut iter,
+        )
+    };
+    check_info(info)?;
+    Ok(IterRefineOutcome { iter })
+}
+
+/// Complex counterpart of [`iter_refine_gesv_f64`]: factor in single
+/// complex, refine to double complex. Wraps `LAPACKE_zcgesv`.
+pub fn iter_refine_gesv_c64(
+    a: &mut MatrixMut<'_, num_complex::Complex64>,
+    ipiv: &mut [i32],
+    b: &mut MatrixMut<'_, num_complex::Complex64>,
+    x: &mut MatrixMut<'_, num_complex::Complex64>,
+) -> Result<IterRefineOutcome> {
+    let n = ensure_square(a)?;
+    let layout = ensure_layout(&[a.layout(), b.layout(), x.layout()])?;
+    if b.rows() != n {
+        return Err(Error::InvalidArgument("B must have n rows"));
+    }
+    if x.rows() != n || x.cols() != b.cols() {
+        return Err(Error::InvalidArgument(
+            "X must have the same shape as B",
+        ));
+    }
+    if ipiv.len() < n {
+        return Err(Error::InvalidArgument("ipiv must have at least n entries"));
+    }
+    let mut iter: core::ffi::c_int = 0;
+    let info = unsafe {
+        onemkl_sys::LAPACKE_zcgesv(
+            layout.as_lapack(),
+            dim_to_mkl_int(n)?,
+            dim_to_mkl_int(b.cols())?,
+            a.as_mut_ptr().cast::<onemkl_sys::MKL_Complex16>(),
+            dim_to_mkl_int(a.leading_dim())?,
+            ipiv.as_mut_ptr(),
+            b.as_mut_ptr().cast::<onemkl_sys::MKL_Complex16>(),
+            dim_to_mkl_int(b.leading_dim())?,
+            x.as_mut_ptr().cast::<onemkl_sys::MKL_Complex16>(),
+            dim_to_mkl_int(x.leading_dim())?,
+            &mut iter,
+        )
+    };
+    check_info(info)?;
+    Ok(IterRefineOutcome { iter })
+}
+
+/// Complex counterpart of [`iter_refine_posv_f64`]: factor a
+/// Hermitian positive-definite matrix in single complex, refine to
+/// double complex. Wraps `LAPACKE_zcposv`.
+pub fn iter_refine_posv_c64(
+    uplo: UpLo,
+    a: &mut MatrixMut<'_, num_complex::Complex64>,
+    b: &mut MatrixMut<'_, num_complex::Complex64>,
+    x: &mut MatrixMut<'_, num_complex::Complex64>,
+) -> Result<IterRefineOutcome> {
+    let n = ensure_square(a)?;
+    let layout = ensure_layout(&[a.layout(), b.layout(), x.layout()])?;
+    if b.rows() != n {
+        return Err(Error::InvalidArgument("B must have n rows"));
+    }
+    if x.rows() != n || x.cols() != b.cols() {
+        return Err(Error::InvalidArgument(
+            "X must have the same shape as B",
+        ));
+    }
+    let mut iter: core::ffi::c_int = 0;
+    let info = unsafe {
+        onemkl_sys::LAPACKE_zcposv(
+            layout.as_lapack(),
+            uplo.as_char() as core::ffi::c_char,
+            dim_to_mkl_int(n)?,
+            dim_to_mkl_int(b.cols())?,
+            a.as_mut_ptr().cast::<onemkl_sys::MKL_Complex16>(),
+            dim_to_mkl_int(a.leading_dim())?,
+            b.as_mut_ptr().cast::<onemkl_sys::MKL_Complex16>(),
+            dim_to_mkl_int(b.leading_dim())?,
+            x.as_mut_ptr().cast::<onemkl_sys::MKL_Complex16>(),
+            dim_to_mkl_int(x.leading_dim())?,
+            &mut iter,
+        )
+    };
+    check_info(info)?;
+    Ok(IterRefineOutcome { iter })
+}
+
 /// Generate an elementary Householder reflector. Wraps
 /// `LAPACKE_*larfg`.
 ///

@@ -62,6 +62,10 @@ pub enum Error {
 
     /// A VM (vector math) routine raised a domain error or other diagnostic.
     VmStatus(u32),
+
+    /// `MKL_malloc` (or another MKL allocator entry point) returned
+    /// null — typically out of memory.
+    AllocationFailure,
 }
 
 impl fmt::Display for Error {
@@ -84,6 +88,9 @@ impl fmt::Display for Error {
                 write!(f, "PARDISO routine failure (error = {code})")
             }
             Self::VmStatus(code) => write!(f, "VM routine failure (status = {code:#x})"),
+            Self::AllocationFailure => {
+                f.write_str("MKL allocator returned null (out of memory?)")
+            }
         }
     }
 }

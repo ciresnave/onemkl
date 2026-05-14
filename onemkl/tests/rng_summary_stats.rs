@@ -64,3 +64,57 @@ fn rejects_undersized_buffer() {
     let data = [1.0_f64, 2.0, 3.0, 4.0, 5.0];
     assert!(SummaryStats::<f64>::new(&data, 2, 3).is_err());
 }
+
+#[test]
+fn quantiles_at_quartiles() {
+    // Sample [1..=11]; expected median = 6 exactly. Q1 / Q3 depend
+    // on the interpolation convention; just check they're in band.
+    let data: Vec<f64> = (1..=11).map(|x| x as f64).collect();
+    let mut ss = SummaryStats::<f64>::new(&data, 1, data.len()).unwrap();
+    let q = ss.quantiles(&[0.25, 0.5, 0.75]).unwrap();
+    assert_eq!(q.len(), 3);
+    assert_abs_diff_eq!(q[1], 6.0, epsilon = 1e-9);
+    assert!((q[0] - 3.5).abs() < 0.5);
+    assert!((q[2] - 8.5).abs() < 0.5);
+}
+
+#[test]
+fn quantiles_rejects_empty_orders() {
+    let data = [1.0_f64, 2.0, 3.0];
+    let mut ss = SummaryStats::<f64>::new(&data, 1, 3).unwrap();
+    assert!(ss.quantiles(&[]).is_err());
+}
+
+#[test]
+fn robust_covariance_tbs_runs() {
+    // TBS (Tukey biweight S-estimator) is the algorithm MKL exposes
+    // for VSL_SS_ROBUST_COV. Needs a multivariate, sufficiently large
+    // sample.
+    const N: usize = 200;
+    let var1: Vec<f64> = (0..N).map(|x| x as f64).collect();
+    let var2: Vec<f64> = (0..N).map(|x| (x as f64) * 2.0).collect();
+    let mut data = Vec::with_capacity(2 * N);
+    data.extend_from_slice(&var1);
+    data.extend_from_slice(&var2);
+    let mut ss = SummaryStats::<f64>::new(&data, 2, N).unwrap();
+    let (mean, cov) = ss.robust_covariance_tbs(&[]).unwrap();
+    assert_eq!(mean.len(), 2);
+    assert_eq!(cov.len(), 4);
+    // Robust mean of an evenly-spaced sequence sits in its middle.
+    assert!(mean[0] > 50.0 && mean[0] < 150.0);
+}
+
+#[test]
+fn outliers_bacon_flags_extreme() {
+    // 5 normal points + 1 huge outlier.
+    let data = [1.0_f64, 2.0, 3.0, 4.0, 5.0, 1000.0];
+    let mut ss = SummaryStats::<f64>::new(&data, 1, data.len()).unwrap();
+    let params = SummaryStats::<f64>::bacon_default_params();
+    let weights = ss.outliers_bacon(&params).unwrap();
+    assert_eq!(weights.len(), data.len());
+    assert!(
+        weights[5] < 1.0,
+        "expected last sample flagged, got weight {}",
+        weights[5]
+    );
+}

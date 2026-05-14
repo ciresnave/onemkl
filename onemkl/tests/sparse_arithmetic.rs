@@ -5,7 +5,7 @@
 use approx::assert_abs_diff_eq;
 
 use onemkl::sparse::{
-    DenseLayout, IndexBase, MatrixType, Operation, SparseMatrix,
+    DenseLayout, FillMode, IndexBase, MatrixDescr, MatrixType, Operation, SparseMatrix,
 };
 
 fn diagonal_3x3<T: onemkl::sparse::SparseScalar + Copy>(values: [T; 3]) -> SparseMatrix<T> {
@@ -127,4 +127,91 @@ fn spmm_with_transpose() {
     assert_abs_diff_eq!(y[0], 1.0 + 0.0 + 2.0, epsilon = 1e-12);
     assert_abs_diff_eq!(y[1], 0.0 + 9.0 + 0.0, epsilon = 1e-12);
     assert_abs_diff_eq!(y[2], 2.0 + 0.0 + 4.0, epsilon = 1e-12);
+}
+
+#[test]
+fn syrk_gram_matrix() {
+    // A = [[1, 0, 2], [0, 3, 0]] (2×3); A·Aᵀ should be diag(1+4, 9) = diag(5, 9).
+    let a_row_ptr = vec![0, 2, 3];
+    let a_col_idx = vec![0, 2, 1];
+    let a_values = vec![1.0_f64, 2.0, 3.0];
+    let a =
+        SparseMatrix::from_csr(2, 3, IndexBase::Zero, a_row_ptr, a_col_idx, a_values).unwrap();
+
+    let c = a.syrk(Operation::NoTrans).unwrap();
+    assert_eq!(c.rows(), 2);
+    assert_eq!(c.cols(), 2);
+
+    // Probe via mv with [1, 1] — only the **upper-triangular** part of
+    // the symmetric output is populated, so applying it as a general
+    // matrix to [1, 1] gives row sums [5, 9] (diag + off-diag-once).
+    let x = [1.0_f64, 1.0];
+    let mut y = [0.0_f64, 0.0];
+    c.mv(Operation::NoTrans, 1.0, MatrixType::General, &x, 0.0, &mut y)
+        .unwrap();
+    assert_abs_diff_eq!(y[0], 5.0, epsilon = 1e-12);
+    assert_abs_diff_eq!(y[1], 9.0, epsilon = 1e-12);
+}
+
+#[test]
+fn syrk_transpose_columns_squared() {
+    // Same A as the spmm test — Aᵀ A is 3×3 with column norms on the
+    // diagonal (1, 9, 4) and off-diag entries from column inner products.
+    let a_row_ptr = vec![0, 2, 3];
+    let a_col_idx = vec![0, 2, 1];
+    let a_values = vec![1.0_f64, 2.0, 3.0];
+    let a =
+        SparseMatrix::from_csr(2, 3, IndexBase::Zero, a_row_ptr, a_col_idx, a_values).unwrap();
+
+    let c = a.syrk(Operation::Trans).unwrap();
+    assert_eq!(c.rows(), 3);
+    assert_eq!(c.cols(), 3);
+
+    let x = [1.0_f64, 1.0, 1.0];
+    let mut y = [0.0_f64, 0.0, 0.0];
+    c.mv(Operation::NoTrans, 1.0, MatrixType::General, &x, 0.0, &mut y)
+        .unwrap();
+    // Upper-triangular storage: row 0 has (1, 0, 2), row 1 has (9, 0),
+    // row 2 has (4). Row sums applied to [1, 1, 1] = [3, 9, 4].
+    assert_abs_diff_eq!(y[0], 3.0, epsilon = 1e-12);
+    assert_abs_diff_eq!(y[1], 9.0, epsilon = 1e-12);
+    assert_abs_diff_eq!(y[2], 4.0, epsilon = 1e-12);
+}
+
+#[test]
+fn sypr_triple_product_with_identity() {
+    // A = [[1, 1], [0, 1]] (upper triangular 2×2 stored as CSR).
+    // B = identity 2×2 (symmetric). Then A · B · Aᵀ = A · Aᵀ = [[2, 1], [1, 1]].
+    let a = SparseMatrix::from_csr(
+        2,
+        2,
+        IndexBase::Zero,
+        vec![0, 2, 3],
+        vec![0, 1, 1],
+        vec![1.0_f64, 1.0, 1.0],
+    )
+    .unwrap();
+    let b = SparseMatrix::from_csr(
+        2,
+        2,
+        IndexBase::Zero,
+        vec![0, 1, 2],
+        vec![0, 1],
+        vec![1.0_f64, 1.0],
+    )
+    .unwrap();
+    let descr_b = MatrixDescr::symmetric(FillMode::Upper);
+
+    let c = a.sypr(Operation::NoTrans, &b, descr_b).unwrap();
+    assert_eq!(c.rows(), 2);
+    assert_eq!(c.cols(), 2);
+
+    // Only the upper triangle is materialized; applying to [1, 1]
+    // gives row sums [2 + 1, 1] = [3, 1].
+    let x = [1.0_f64, 1.0];
+    let mut y = [0.0_f64, 0.0];
+    c.mv(Operation::NoTrans, 1.0, MatrixType::General, &x, 0.0, &mut y)
+        .unwrap();
+    assert_abs_diff_eq!(y[0], 3.0, epsilon = 1e-12);
+    assert_abs_diff_eq!(y[1], 1.0, epsilon = 1e-12);
 }

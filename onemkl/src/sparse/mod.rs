@@ -838,6 +838,61 @@ impl<T: SparseScalar> SparseMatrix<T> {
         Ok(Self::new_mkl_owned(dest, rows, cols))
     }
 
+    /// Symmetric self-product `C ← op(self) · op(self)ᵀ`, returning
+    /// a freshly-allocated sparse `C`. Wraps `mkl_sparse_syrk`.
+    ///
+    /// With `op = NoTrans`, `C = A · Aᵀ` (`m × m` where `A` is `m × k`).
+    /// With `op = Trans` or `ConjTrans`, `C = Aᵀ · A` (`k × k`).
+    ///
+    /// Standard building block for normal equations
+    /// (`AᵀA · x = Aᵀb`), Gram matrices, and sparse covariance.
+    pub fn syrk(&self, op: Operation) -> Result<Self> {
+        let dim = match op {
+            Operation::NoTrans => self.rows,
+            Operation::Trans | Operation::ConjTrans => self.cols,
+        };
+        let mut dest: sparse_matrix_t = ptr::null_mut();
+        let status = unsafe {
+            sys::mkl_sparse_syrk(op.as_sys(), self.handle, &mut dest)
+        };
+        check_sparse(status)?;
+        Ok(Self::new_mkl_owned(dest, dim, dim))
+    }
+
+    /// Symmetric triple product `C ← op(self) · B · op(self)ᵀ`,
+    /// returning a freshly-allocated sparse `C`. Wraps
+    /// `mkl_sparse_sypr` with the full-multiplication stage.
+    ///
+    /// `B` must be a symmetric / Hermitian sparse matrix, described
+    /// by `descr_b` (use [`MatrixDescr::symmetric`] for real or
+    /// [`MatrixDescr::hermitian`] for complex). Common in GNN
+    /// message passing and reduced-order model construction.
+    pub fn sypr(
+        &self,
+        op: Operation,
+        b: &Self,
+        descr_b: impl Into<MatrixDescr>,
+    ) -> Result<Self> {
+        let dim = match op {
+            Operation::NoTrans => self.rows,
+            Operation::Trans | Operation::ConjTrans => self.cols,
+        };
+        let descr_b: MatrixDescr = descr_b.into();
+        let mut dest: sparse_matrix_t = ptr::null_mut();
+        let status = unsafe {
+            sys::mkl_sparse_sypr(
+                op.as_sys(),
+                self.handle,
+                b.handle,
+                descr_b.inner,
+                &mut dest,
+                sys::sparse_request_t::SPARSE_STAGE_FULL_MULT,
+            )
+        };
+        check_sparse(status)?;
+        Ok(Self::new_mkl_owned(dest, dim, dim))
+    }
+
     /// `C ← op(self) · other` returning a sparse `C`. Wraps
     /// `mkl_sparse_spmm` (which dispatches generically by scalar
     /// type).

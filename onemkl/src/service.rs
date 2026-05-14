@@ -2,6 +2,9 @@
 //! verbose mode, and overall library lifecycle.
 
 use core::ffi::{c_char, c_int};
+use core::marker::PhantomData;
+use core::ptr::NonNull;
+use core::slice;
 use std::ffi::{CStr, CString};
 
 use onemkl_sys as sys;
@@ -72,6 +75,35 @@ pub fn set_num_threads(n: i32) {
 /// previous local thread count for that thread.
 pub fn set_num_threads_local(n: i32) -> i32 {
     unsafe { sys::MKL_Set_Num_Threads_Local(n) }
+}
+
+/// Scoped guard that restores the previous **local** thread count when
+/// dropped. Useful for "during this MKL call use N threads, then put
+/// it back" patterns in inference loops.
+///
+/// ```no_run
+/// use onemkl::service::ThreadCountGuard;
+///
+/// let _g = ThreadCountGuard::new(1);
+/// // ... MKL calls in this scope run single-threaded ...
+/// ```
+pub struct ThreadCountGuard {
+    previous: i32,
+}
+
+impl ThreadCountGuard {
+    /// Set the calling thread's local MKL thread count to `n` and
+    /// remember the previous value.
+    pub fn new(n: i32) -> Self {
+        let previous = unsafe { sys::MKL_Set_Num_Threads_Local(n) };
+        Self { previous }
+    }
+}
+
+impl Drop for ThreadCountGuard {
+    fn drop(&mut self) {
+        unsafe { sys::MKL_Set_Num_Threads_Local(self.previous) };
+    }
 }
 
 /// Maximum number of threads oneMKL is allowed to use.
@@ -172,6 +204,244 @@ pub fn set_memory_limit(mem_type: i32, limit_bytes: usize) -> Result<()> {
             "MKL_Set_Memory_Limit rejected the requested limit",
         ))
     }
+}
+
+// =====================================================================
+// Aligned allocations
+// =====================================================================
+
+/// Owned buffer of `T`s, allocated by `MKL_malloc` with the requested
+/// alignment and freed by `MKL_free` on drop.
+///
+/// SIMD-aligned backing storage is the usual reason to reach for this:
+/// 64-byte alignment matches AVX-512 cache-line loads; 32 byte matches
+/// AVX2. For raw tensor data feeding an MKL routine, allocating here
+/// avoids a copy compared to `Vec<T>` (which only guarantees `align_of::<T>()`).
+///
+/// The buffer is zero-initialized via `MKL_malloc`'s contract; treat
+/// the contents as uninitialized only if you skip the value-writing
+/// constructors and explicitly write `MaybeUninit<T>` instead.
+pub struct AlignedBuffer<T> {
+    ptr: NonNull<T>,
+    len: usize,
+    _marker: PhantomData<T>,
+}
+
+// SAFETY: `MKL_malloc` returns a heap pointer that's not tied to any
+// thread; the buffer is `Send`/`Sync` to the same extent `Box<[T]>` is.
+unsafe impl<T: Send> Send for AlignedBuffer<T> {}
+unsafe impl<T: Sync> Sync for AlignedBuffer<T> {}
+
+impl<T> AlignedBuffer<T> {
+    /// Allocate `len` elements of `T` with the given alignment in
+    /// bytes. `alignment` must be a power of two and a multiple of
+    /// `align_of::<T>()`.
+    ///
+    /// Returns `Err(Error::AllocationFailure)` if `MKL_malloc` returns
+    /// null (out of memory).
+    pub fn new(len: usize, alignment: usize) -> Result<Self>
+    where
+        T: Default + Copy,
+    {
+        let mut buf = Self::new_uninit(len, alignment)?;
+        let default = T::default();
+        for slot in buf.as_mut_slice().iter_mut() {
+            *slot = default;
+        }
+        Ok(buf)
+    }
+
+    /// Allocate without initializing the contents. Callers must write
+    /// every element before reading.
+    pub fn new_uninit(len: usize, alignment: usize) -> Result<Self> {
+        if !alignment.is_power_of_two() {
+            return Err(Error::InvalidArgument(
+                "alignment must be a power of two",
+            ));
+        }
+        if alignment < core::mem::align_of::<T>() {
+            return Err(Error::InvalidArgument(
+                "alignment must be a multiple of align_of::<T>()",
+            ));
+        }
+        let bytes = len.checked_mul(core::mem::size_of::<T>()).ok_or(
+            Error::InvalidArgument("len * size_of::<T>() overflowed"),
+        )?;
+        let ptr = unsafe { sys::MKL_malloc(bytes, alignment as c_int) };
+        if ptr.is_null() {
+            return Err(Error::AllocationFailure);
+        }
+        // SAFETY: pointer is non-null per the check above.
+        let ptr = unsafe { NonNull::new_unchecked(ptr.cast::<T>()) };
+        Ok(Self {
+            ptr,
+            len,
+            _marker: PhantomData,
+        })
+    }
+
+    /// Number of elements.
+    #[inline]
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.len
+    }
+
+    /// True if the buffer holds zero elements.
+    #[inline]
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+
+    /// Borrow as an immutable slice.
+    #[inline]
+    #[must_use]
+    pub fn as_slice(&self) -> &[T] {
+        // SAFETY: pointer is valid for self.len elements for the
+        // lifetime of `self`.
+        unsafe { slice::from_raw_parts(self.ptr.as_ptr(), self.len) }
+    }
+
+    /// Borrow as a mutable slice.
+    #[inline]
+    #[must_use]
+    pub fn as_mut_slice(&mut self) -> &mut [T] {
+        // SAFETY: pointer is valid for self.len elements for the
+        // lifetime of `self`.
+        unsafe { slice::from_raw_parts_mut(self.ptr.as_ptr(), self.len) }
+    }
+
+    /// Raw pointer to the first element.
+    #[inline]
+    #[must_use]
+    pub fn as_ptr(&self) -> *const T {
+        self.ptr.as_ptr()
+    }
+
+    /// Raw mutable pointer to the first element.
+    #[inline]
+    #[must_use]
+    pub fn as_mut_ptr(&mut self) -> *mut T {
+        self.ptr.as_ptr()
+    }
+}
+
+impl<T> Drop for AlignedBuffer<T> {
+    fn drop(&mut self) {
+        // SAFETY: pointer came from MKL_malloc and we own the allocation.
+        unsafe { sys::MKL_free(self.ptr.as_ptr().cast()) };
+    }
+}
+
+impl<T> core::ops::Deref for AlignedBuffer<T> {
+    type Target = [T];
+    #[inline]
+    fn deref(&self) -> &[T] {
+        self.as_slice()
+    }
+}
+
+impl<T> core::ops::DerefMut for AlignedBuffer<T> {
+    #[inline]
+    fn deref_mut(&mut self) -> &mut [T] {
+        self.as_mut_slice()
+    }
+}
+
+// =====================================================================
+// CPU / ISA dispatch
+// =====================================================================
+
+/// Vector ISA level. Pass to [`enable_instructions`] to force MKL to
+/// dispatch to a specific code path (e.g. for benchmarking, or to work
+/// around a buggy fallback).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum IsaLevel {
+    /// SSE4.2 (baseline x86-64-v2).
+    Sse42,
+    /// Original AVX.
+    Avx,
+    /// AVX2.
+    Avx2,
+    /// AVX2 enabled-1 (atom-style extension).
+    Avx2E1,
+    /// AVX-512 (skylake-class).
+    Avx512,
+    /// AVX-512 enabled-1 (cascade lake VNNI).
+    Avx512E1,
+    /// AVX-512 enabled-2 (cooper lake bf16).
+    Avx512E2,
+    /// AVX-512 enabled-3 (sapphire rapids).
+    Avx512E3,
+    /// AVX-512 enabled-4.
+    Avx512E4,
+    /// AVX-512 enabled-5.
+    Avx512E5,
+    /// AVX-512 MIC (Knights Landing).
+    Avx512Mic,
+    /// AVX-512 MIC enabled-1.
+    Avx512MicE1,
+    /// AVX10.
+    Avx10,
+}
+
+impl IsaLevel {
+    #[inline]
+    fn as_int(self) -> c_int {
+        let v = match self {
+            Self::Sse42 => sys::MKL_ENABLE_SSE4_2,
+            Self::Avx => sys::MKL_ENABLE_AVX,
+            Self::Avx2 => sys::MKL_ENABLE_AVX2,
+            Self::Avx2E1 => sys::MKL_ENABLE_AVX2_E1,
+            Self::Avx512 => sys::MKL_ENABLE_AVX512,
+            Self::Avx512E1 => sys::MKL_ENABLE_AVX512_E1,
+            Self::Avx512E2 => sys::MKL_ENABLE_AVX512_E2,
+            Self::Avx512E3 => sys::MKL_ENABLE_AVX512_E3,
+            Self::Avx512E4 => sys::MKL_ENABLE_AVX512_E4,
+            Self::Avx512E5 => sys::MKL_ENABLE_AVX512_E5,
+            Self::Avx512Mic => sys::MKL_ENABLE_AVX512_MIC,
+            Self::Avx512MicE1 => sys::MKL_ENABLE_AVX512_MIC_E1,
+            Self::Avx10 => sys::MKL_ENABLE_AVX10,
+        };
+        v as c_int
+    }
+}
+
+/// Pin oneMKL's dispatch to a specific vector-ISA tier. Returns `Ok(())`
+/// if the requested level is supported and now active.
+///
+/// Call **before** any MKL routine to take effect — MKL caches the
+/// dispatched code path on first use.
+pub fn enable_instructions(level: IsaLevel) -> Result<()> {
+    let r = unsafe { sys::MKL_Enable_Instructions(level.as_int()) };
+    // MKL returns 1 on success, 0 on failure (e.g. CPU doesn't
+    // support the requested ISA).
+    if r == 1 {
+        Ok(())
+    } else {
+        Err(Error::InvalidArgument(
+            "MKL_Enable_Instructions: CPU does not support the requested ISA level",
+        ))
+    }
+}
+
+/// Read the CPU's current clock counter (TSC-like). Useful for fine-
+/// grained timing of MKL routines.
+pub fn cpu_clocks() -> u64 {
+    let mut clocks: u64 = 0;
+    unsafe { sys::MKL_Get_Cpu_Clocks(&mut clocks) };
+    clocks
+}
+
+/// Current CPU frequency in GHz.
+pub fn cpu_frequency_ghz() -> f64 {
+    unsafe { sys::MKL_Get_Cpu_Frequency() }
+}
+
+/// Maximum CPU frequency in GHz.
+pub fn max_cpu_frequency_ghz() -> f64 {
+    unsafe { sys::MKL_Get_Max_Cpu_Frequency() }
 }
 
 // =====================================================================

@@ -62,12 +62,67 @@ pub trait SsScalar: Copy + Default + 'static {
         estimates: u64,
         method: c_int,
     ) -> c_int;
+
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn ss_edit_quantiles(
+        task: VSLSSTaskPtr,
+        quant_order_n: *const c_int,
+        quant_orders: *const Self,
+        quants_out: *mut Self,
+        order_stats_out: *mut Self,
+        order_stats_storage: *const c_int,
+    ) -> c_int;
+
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn ss_edit_stream_quantiles(
+        task: VSLSSTaskPtr,
+        quant_order_n: *const c_int,
+        quant_orders: *const Self,
+        quants_out: *mut Self,
+        params_n: *const c_int,
+        params: *const Self,
+    ) -> c_int;
+
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn ss_edit_robust_covariance(
+        task: VSLSSTaskPtr,
+        cov_storage: *const c_int,
+        n_params: *const c_int,
+        params: *const Self,
+        mean_out: *mut Self,
+        cov_out: *mut Self,
+    ) -> c_int;
+
+    unsafe fn ss_edit_outliers_detection(
+        task: VSLSSTaskPtr,
+        n_params: *const c_int,
+        params: *const Self,
+        weights_out: *mut Self,
+    ) -> c_int;
+
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn ss_edit_missing_values(
+        task: VSLSSTaskPtr,
+        n_params: *const c_int,
+        params: *const Self,
+        init_estimates_n: *const c_int,
+        init_estimates: *const Self,
+        prior_n: *const c_int,
+        prior: *const Self,
+        simul_vals_n: *const c_int,
+        simul_vals_out: *mut Self,
+        estimates_n: *const c_int,
+        estimates_out: *mut Self,
+    ) -> c_int;
 }
 
 macro_rules! impl_ss_scalar {
     ($ty:ty,
         new=$new:ident, edit=$edit:ident,
-        moments=$moments:ident, compute=$compute:ident
+        moments=$moments:ident, compute=$compute:ident,
+        quantiles=$quantiles:ident, stream_quantiles=$stream_quantiles:ident,
+        robust_cov=$robust_cov:ident, outliers=$outliers:ident,
+        missing=$missing:ident,
     ) => {
         impl SsScalar for $ty {
             unsafe fn ss_new_task(
@@ -107,16 +162,113 @@ macro_rules! impl_ss_scalar {
             ) -> c_int {
                 unsafe { sys::$compute(task, estimates, method) }
             }
+            unsafe fn ss_edit_quantiles(
+                task: VSLSSTaskPtr,
+                quant_order_n: *const c_int,
+                quant_orders: *const Self,
+                quants_out: *mut Self,
+                order_stats_out: *mut Self,
+                order_stats_storage: *const c_int,
+            ) -> c_int {
+                unsafe {
+                    sys::$quantiles(
+                        task,
+                        quant_order_n,
+                        quant_orders,
+                        quants_out,
+                        order_stats_out,
+                        order_stats_storage,
+                    )
+                }
+            }
+            unsafe fn ss_edit_stream_quantiles(
+                task: VSLSSTaskPtr,
+                quant_order_n: *const c_int,
+                quant_orders: *const Self,
+                quants_out: *mut Self,
+                params_n: *const c_int,
+                params: *const Self,
+            ) -> c_int {
+                unsafe {
+                    sys::$stream_quantiles(
+                        task,
+                        quant_order_n,
+                        quant_orders,
+                        quants_out,
+                        params_n,
+                        params,
+                    )
+                }
+            }
+            unsafe fn ss_edit_robust_covariance(
+                task: VSLSSTaskPtr,
+                cov_storage: *const c_int,
+                n_params: *const c_int,
+                params: *const Self,
+                mean_out: *mut Self,
+                cov_out: *mut Self,
+            ) -> c_int {
+                unsafe {
+                    sys::$robust_cov(
+                        task, cov_storage, n_params, params, mean_out, cov_out,
+                    )
+                }
+            }
+            unsafe fn ss_edit_outliers_detection(
+                task: VSLSSTaskPtr,
+                n_params: *const c_int,
+                params: *const Self,
+                weights_out: *mut Self,
+            ) -> c_int {
+                unsafe { sys::$outliers(task, n_params, params, weights_out) }
+            }
+            unsafe fn ss_edit_missing_values(
+                task: VSLSSTaskPtr,
+                n_params: *const c_int,
+                params: *const Self,
+                init_estimates_n: *const c_int,
+                init_estimates: *const Self,
+                prior_n: *const c_int,
+                prior: *const Self,
+                simul_vals_n: *const c_int,
+                simul_vals_out: *mut Self,
+                estimates_n: *const c_int,
+                estimates_out: *mut Self,
+            ) -> c_int {
+                unsafe {
+                    sys::$missing(
+                        task,
+                        n_params,
+                        params,
+                        init_estimates_n,
+                        init_estimates,
+                        prior_n,
+                        prior,
+                        simul_vals_n,
+                        simul_vals_out,
+                        estimates_n,
+                        estimates_out,
+                    )
+                }
+            }
         }
     };
 }
 
 impl_ss_scalar!(f32,
     new=vslsSSNewTask, edit=vslsSSEditTask,
-    moments=vslsSSEditMoments, compute=vslsSSCompute);
+    moments=vslsSSEditMoments, compute=vslsSSCompute,
+    quantiles=vslsSSEditQuantiles, stream_quantiles=vslsSSEditStreamQuantiles,
+    robust_cov=vslsSSEditRobustCovariance, outliers=vslsSSEditOutliersDetection,
+    missing=vslsSSEditMissingValues,
+);
 impl_ss_scalar!(f64,
     new=vsldSSNewTask, edit=vsldSSEditTask,
-    moments=vsldSSEditMoments, compute=vsldSSCompute);
+    moments=vsldSSEditMoments, compute=vsldSSCompute,
+    quantiles=vsldSSEditQuantiles, stream_quantiles=vsldSSEditStreamQuantiles,
+    robust_cov=vsldSSEditRobustCovariance, outliers=vsldSSEditOutliersDetection,
+    missing=vsldSSEditMissingValues,
+);
 
 /// Owned summary-statistics task. Each compute method registers output
 /// buffers internally and runs `vsl?SSCompute`.
@@ -290,6 +442,281 @@ impl<'data, T: SsScalar> SummaryStats<'data, T> {
         };
         check_vsl(status)?;
         Ok(sum)
+    }
+
+    /// Per-variable quantiles at the requested `orders` (e.g.
+    /// `[0.25, 0.5, 0.75]` for Q1 / median / Q3). Returns a flat
+    /// vector laid out as `num_variables × orders.len()`, where
+    /// `result[i * orders.len() + j]` is variable `i`'s `orders[j]`
+    /// quantile.
+    ///
+    /// All order values must lie in `(0, 1)`.
+    pub fn quantiles(&mut self, orders: &[T]) -> Result<Vec<T>>
+    where
+        T: PartialOrd,
+    {
+        if orders.is_empty() {
+            return Err(Error::InvalidArgument("orders must be non-empty"));
+        }
+        let order_n: c_int = orders
+            .len()
+            .try_into()
+            .map_err(|_| Error::DimensionOverflow)?;
+        let mut out = vec![T::default(); self.p * orders.len()];
+        let status = unsafe {
+            T::ss_edit_quantiles(
+                self.task,
+                &order_n,
+                orders.as_ptr(),
+                out.as_mut_ptr(),
+                ptr::null_mut(),
+                ptr::null(),
+            )
+        };
+        check_vsl(status)?;
+        let status = unsafe {
+            T::ss_compute(
+                self.task,
+                sys::VSL_SS_QUANTS as u64,
+                sys::VSL_SS_METHOD_FAST as c_int,
+            )
+        };
+        check_vsl(status)?;
+        Ok(out)
+    }
+
+    /// Streaming-quantile estimator (Zhang-Wang). Suitable for
+    /// online data where you can't hold the full sample but want an
+    /// approximate quantile. `params` controls the estimator
+    /// (typically `[buffer_size_per_quantile]`). Returns the same
+    /// `num_variables × orders.len()` layout as [`Self::quantiles`].
+    pub fn stream_quantiles(
+        &mut self,
+        orders: &[T],
+        params: &[T],
+    ) -> Result<Vec<T>> {
+        if orders.is_empty() {
+            return Err(Error::InvalidArgument("orders must be non-empty"));
+        }
+        let order_n: c_int = orders
+            .len()
+            .try_into()
+            .map_err(|_| Error::DimensionOverflow)?;
+        let params_n: c_int = params
+            .len()
+            .try_into()
+            .map_err(|_| Error::DimensionOverflow)?;
+        let mut out = vec![T::default(); self.p * orders.len()];
+        let status = unsafe {
+            T::ss_edit_stream_quantiles(
+                self.task,
+                &order_n,
+                orders.as_ptr(),
+                out.as_mut_ptr(),
+                &params_n,
+                params.as_ptr(),
+            )
+        };
+        check_vsl(status)?;
+        let status = unsafe {
+            T::ss_compute(
+                self.task,
+                sys::VSL_SS_STREAM_QUANTS as u64,
+                sys::VSL_SS_METHOD_FAST as c_int,
+            )
+        };
+        check_vsl(status)?;
+        Ok(out)
+    }
+
+    /// Robust covariance + mean via Tukey's bi-weight S-estimator
+    /// (`VSL_SS_METHOD_TBS` in MKL).
+    ///
+    /// Returns `(mean, cov)` where `cov` is the `p × p` covariance
+    /// stored in column-major (full) layout. `params` is the TBS
+    /// configuration — pass an empty slice to accept MKL's defaults,
+    /// or supply `[breakdown_point]` (typical value `0.5`) to control
+    /// the maximum fraction of outliers the estimator tolerates.
+    ///
+    /// Note: MKL exposes BACON only for *outlier weights*
+    /// (see [`Self::outliers_bacon`]); for a full robust covariance
+    /// estimate the supported algorithm is TBS.
+    pub fn robust_covariance_tbs(
+        &mut self,
+        params: &[T],
+    ) -> Result<(Vec<T>, Vec<T>)> {
+        let cov_storage: c_int = sys::VSL_SS_MATRIX_STORAGE_FULL as c_int;
+        let n_params: c_int = params
+            .len()
+            .try_into()
+            .map_err(|_| Error::DimensionOverflow)?;
+        let mut mean = vec![T::default(); self.p];
+        let mut cov = vec![T::default(); self.p * self.p];
+        let status = unsafe {
+            T::ss_edit_robust_covariance(
+                self.task,
+                &cov_storage,
+                &n_params,
+                if params.is_empty() {
+                    ptr::null()
+                } else {
+                    params.as_ptr()
+                },
+                mean.as_mut_ptr(),
+                cov.as_mut_ptr(),
+            )
+        };
+        check_vsl(status)?;
+        let status = unsafe {
+            T::ss_compute(
+                self.task,
+                sys::VSL_SS_ROBUST_COV as u64,
+                sys::VSL_SS_METHOD_TBS as c_int,
+            )
+        };
+        check_vsl(status)?;
+        Ok((mean, cov))
+    }
+
+    /// Per-observation outlier weights via BACON (Blocked Adaptive
+    /// Computationally-efficient Outlier Nominators). Returns a
+    /// vector of length `num_observations`: `1.0` for inliers,
+    /// `0.0` for flagged outliers.
+    ///
+    /// `params` is BACON's 3-element configuration:
+    ///
+    /// - `params[0]` = initialization method
+    ///   (`VSL_SS_METHOD_BACON_MEDIAN_INIT` or
+    ///   `VSL_SS_METHOD_BACON_MAHALANOBIS_INIT` from `onemkl-sys`),
+    /// - `params[1]` = significance level (e.g. `0.05`),
+    /// - `params[2]` = initial subset size as fraction of `n`.
+    ///
+    /// Use [`SummaryStats::<f64>::bacon_default_params`] for sensible
+    /// defaults.
+    pub fn outliers_bacon(&mut self, params: &[T; 3]) -> Result<Vec<T>> {
+        let n_params: c_int = 3;
+        let mut weights = vec![T::default(); self._n];
+        let status = unsafe {
+            T::ss_edit_outliers_detection(
+                self.task,
+                &n_params,
+                params.as_ptr(),
+                weights.as_mut_ptr(),
+            )
+        };
+        check_vsl(status)?;
+        let status = unsafe {
+            T::ss_compute(
+                self.task,
+                sys::VSL_SS_OUTLIERS as u64,
+                sys::VSL_SS_METHOD_BACON as c_int,
+            )
+        };
+        check_vsl(status)?;
+        Ok(weights)
+    }
+
+    /// Imputed mean + covariance for data containing missing values
+    /// (marked as `NaN`). Runs MKL's multiple-imputation EM
+    /// estimator with the supplied `params` (length-5 vector;
+    /// `VSL_SS_MI_PARAMS_SIZE` in `onemkl-sys`).
+    ///
+    /// Returns `(mean, cov)`. The simulated imputations themselves
+    /// are written into the *original* data buffer in-place where
+    /// supported by MKL — pass a mutable copy if you need to retain
+    /// the original.
+    ///
+    /// Most callers should use
+    /// [`SummaryStats::<f64>::impute_default_params`] which supplies
+    /// a sensible default `params` array.
+    pub fn impute_missing(&mut self, params: &[T; 5]) -> Result<(Vec<T>, Vec<T>)> {
+        let n_params: c_int = 5;
+        let init_n: c_int = 0;
+        let prior_n: c_int = 0;
+        let simul_n: c_int = 0;
+        let estimates_n: c_int = (self.p + self.p * self.p) as c_int;
+        let mut estimates = vec![T::default(); self.p + self.p * self.p];
+        let status = unsafe {
+            T::ss_edit_missing_values(
+                self.task,
+                &n_params,
+                params.as_ptr(),
+                &init_n,
+                ptr::null(),
+                &prior_n,
+                ptr::null(),
+                &simul_n,
+                ptr::null_mut(),
+                &estimates_n,
+                estimates.as_mut_ptr(),
+            )
+        };
+        check_vsl(status)?;
+        let status = unsafe {
+            T::ss_compute(
+                self.task,
+                sys::VSL_SS_MISSING_VALS as u64,
+                sys::VSL_SS_METHOD_MI as c_int,
+            )
+        };
+        check_vsl(status)?;
+        let mean = estimates[..self.p].to_vec();
+        let cov = estimates[self.p..].to_vec();
+        Ok((mean, cov))
+    }
+}
+
+impl SummaryStats<'_, f64> {
+    /// Default BACON parameters: median initialization, α = 0.05,
+    /// β = 0.05.
+    #[inline]
+    #[must_use]
+    pub fn bacon_default_params() -> [f64; 3] {
+        [
+            sys::VSL_SS_METHOD_BACON_MEDIAN_INIT as f64,
+            0.05,
+            0.05,
+        ]
+    }
+
+    /// Default multiple-imputation parameters: copy input, 25 EM
+    /// iterations, 1e-4 stopping tolerance.
+    #[inline]
+    #[must_use]
+    pub fn impute_default_params() -> [f64; 5] {
+        [
+            sys::VSL_SS_METHOD_MI as f64, // method id
+            25.0,                          // max iterations
+            1.0e-4,                        // tolerance
+            1.0,                           // copy data flag
+            0.0,                           // reserved
+        ]
+    }
+}
+
+impl SummaryStats<'_, f32> {
+    /// `f32` counterpart of [`SummaryStats::<f64>::bacon_default_params`].
+    #[inline]
+    #[must_use]
+    pub fn bacon_default_params() -> [f32; 3] {
+        [
+            sys::VSL_SS_METHOD_BACON_MEDIAN_INIT as f32,
+            0.05,
+            0.05,
+        ]
+    }
+
+    /// `f32` counterpart of [`SummaryStats::<f64>::impute_default_params`].
+    #[inline]
+    #[must_use]
+    pub fn impute_default_params() -> [f32; 5] {
+        [
+            sys::VSL_SS_METHOD_MI as f32,
+            25.0,
+            1.0e-4,
+            1.0,
+            0.0,
+        ]
     }
 }
 
