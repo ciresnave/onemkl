@@ -6,6 +6,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## Unreleased
 
+## 0.2.0 - 2026-05-14
+
+### Changed (minor-bump compatibility notes)
+
+- `Error` gained a new `AllocationFailure` variant; downstream code
+  matching exhaustively on `Error` needs a wildcard arm or to
+  enumerate the new variant.
+- `BasicRng` gained four new variants (`Sobol`, `Niederreiter`,
+  `Ars5`, `Rdrand`); same caveat for exhaustive matches.
+- `MKL_ENABLE_AVX`, `MKL_ENABLE_AVX512_MIC`, and
+  `MKL_ENABLE_AVX512_MIC_E1` no longer appear in the `IsaLevel`
+  enum — newer MKL releases (≥ 2026) drop the corresponding
+  symbols, and the values they accepted are subsumed by `Sse42` /
+  `Avx2` / `Avx512` / `Avx10`.
+
 ### Added — second-pass ML-focused surface expansion
 
 - **`Stream` distribution coverage** rounded out with the

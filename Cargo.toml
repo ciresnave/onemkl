@@ -3,7 +3,7 @@ resolver = "3"
 members = ["onemkl-sys", "onemkl"]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 rust-version = "1.95"
 license = "MIT OR Apache-2.0"
@@ -14,7 +14,7 @@ keywords = ["mkl", "onemkl", "blas", "lapack", "math"]
 categories = ["api-bindings", "mathematics", "science"]
 
 [workspace.dependencies]
-onemkl-sys = { path = "onemkl-sys", version = "0.1.0", default-features = false }
+onemkl-sys = { path = "onemkl-sys", version = "0.2.0", default-features = false }
 num-complex = "0.4"
 num-traits = "0.2"
 thiserror = "2"
