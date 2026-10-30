@@ -192,10 +192,17 @@ Wrap the MPI-gated domains behind their existing opt-in features:
 
 These are explicit non-goals — we do not intend to wrap them.
 
-- **DPC++ / SYCL APIs** — those are a C++ surface; users wanting GPU
-  acceleration through a Rust wrapper should look at vendor-specific
-  routes (CUDA, ROCm) instead.
-- **OpenMP offload variants** (`*_omp_offload.h`) — same reasoning.
+- **DPC++ / SYCL APIs inside these two crates.** The SYCL interface of
+  oneMKL (`oneapi::mkl::*`, taking a `sycl::queue`) needs the oneAPI DPC++
+  compiler (`icpx -fsycl`) and a C++ shim, which these crates deliberately
+  do not require. It is **not** a non-goal for the portfolio: it is planned
+  as a separate sibling project (Intel GPU support through oneMKL, wrapping
+  `oneapi::mkl::blas` and `dft` behind `extern "C"` and depending on
+  `onemkl-sys` from crates.io). Name and owner are pending a decision by the
+  project owner.
+- **OpenMP offload variants** (`*_omp_offload.h`) — need an OpenMP target
+  region at the call site, which a Rust caller cannot supply; revisit only
+  if the sibling project finds a workable route.
 - **Fortran-style `LAPACK_*` wrappers** when LAPACKE provides the
   equivalent — we standardize on the LAPACKE interface throughout.
 - **Routines users can build themselves trivially** with the existing

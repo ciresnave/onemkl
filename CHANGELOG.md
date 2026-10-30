@@ -6,6 +6,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## Unreleased
 
+## 0.2.1 - 2026-10-30
+
+### Changed
+
+- ROADMAP: the "DPC++ / SYCL APIs" non-goal is withdrawn for the portfolio. It stays out of these two crates (it needs the oneAPI DPC++ compiler) and is planned as a separate sibling project for Intel GPUs. Documentation and version only; no code change.
+
 ## 0.2.0 - 2026-05-14
 
 ### Changed (minor-bump compatibility notes)
