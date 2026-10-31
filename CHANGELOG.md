@@ -6,6 +6,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## Unreleased
 
+## 0.2.2 - 2026-10-31
+
+### Changed
+
+- Docs only, no code change. ROADMAP gains an "Ownership" section: Bonefish owns this project ("Bonefish owns oneMKL/oneAPI in our software ecosystem." (CireSnave, board 329, ruled 2026-10-30, recorded by the portfolio PM)), and the SYCL/DPC++ interface lives in `ThinkersJournal/bonefish`. The "DPC++ / SYCL APIs" out-of-scope entry now names Bonefish instead of "name and owner pending", and no longer says the sibling project depends on `onemkl-sys` (`bonefish-sys` does not). README points to Bonefish.
+- The version number is a placeholder for the portfolio PM, who allocates it at the gate.
+
 ## 0.2.1 - 2026-10-30
 
 ### Changed
