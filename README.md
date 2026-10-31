@@ -10,6 +10,8 @@ to Rust:
 
 For current coverage and what's planned, see [`ROADMAP.md`](ROADMAP.md).
 
+These crates are the CPU interface (no DPC++ compiler needed). The SYCL/DPC++ interface to oneMKL, for Intel GPUs and for SYCL queues generally, is a separate project, [Bonefish](https://github.com/ThinkersJournal/bonefish), which also owns this one; see "Ownership" in [`ROADMAP.md`](ROADMAP.md).
+
 ## Requirements
 
 - Intel oneAPI Math Kernel Library installed locally. The build script

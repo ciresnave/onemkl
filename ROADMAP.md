@@ -4,6 +4,10 @@ This document tracks the current state of the wrappers and what's planned
 next. As planned items become reality they collapse into the *Status*
 section's table; the *Plans* section then shrinks accordingly.
 
+## Ownership
+
+Bonefish owns this project. The ruling, as relayed: "Bonefish owns oneMKL/oneAPI in our software ecosystem." (CireSnave, board 329, ruled 2026-10-30, recorded by the portfolio PM). That covers these two crates (`onemkl-sys`, `onemkl`: the CPU interface, C/LAPACKE, no DPC++ compiler needed) and the SYCL/DPC++ interface (Intel GPU and CPU through `oneapi::mkl::*`), which is built in [`ThinkersJournal/bonefish`](https://github.com/ThinkersJournal/bonefish). CPUFish consumes the crates from crates.io. Planned work for the CPU crates stays in this file; anything that needs `icpx -fsycl` belongs in Bonefish.
+
 ## Coverage tiers
 
 Each oneMKL domain is rated against three tiers. We use these as the
@@ -195,11 +199,15 @@ These are explicit non-goals — we do not intend to wrap them.
 - **DPC++ / SYCL APIs inside these two crates.** The SYCL interface of
   oneMKL (`oneapi::mkl::*`, taking a `sycl::queue`) needs the oneAPI DPC++
   compiler (`icpx -fsycl`) and a C++ shim, which these crates deliberately
-  do not require. It is **not** a non-goal for the portfolio: it is planned
-  as a separate sibling project (Intel GPU support through oneMKL, wrapping
-  `oneapi::mkl::blas` and `dft` behind `extern "C"` and depending on
-  `onemkl-sys` from crates.io). Name and owner are pending a decision by the
-  project owner.
+  do not require. It is **not** a non-goal for the portfolio: it is the
+  sibling project **Bonefish**
+  ([`ThinkersJournal/bonefish`](https://github.com/ThinkersJournal/bonefish):
+  `bonefish-sys`, `bonefish`, `bonefish-sycl-emit`). Its `bonefish-sys`
+  wraps `oneapi::mkl::blas` and `dft` behind `extern "C"` and does **not**
+  depend on `onemkl-sys` (it needs the DPC++ compiler; these crates must
+  not). The ownership of both projects is settled: see "Ownership" at the
+  top of this file. Status and measurements of the SYCL work live in
+  Bonefish's own `ROADMAP.md`, not here.
 - **OpenMP offload variants** (`*_omp_offload.h`) — need an OpenMP target
   region at the call site, which a Rust caller cannot supply; revisit only
   if the sibling project finds a workable route.
